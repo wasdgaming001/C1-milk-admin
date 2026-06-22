@@ -1,0 +1,728 @@
+
+
+
+/**
+ * ============================================================================
+ * MILK DELIVERY ADMIN — V17 BACKEND
+ * PART 3 of 5: MILK IMPORT ACTIONS
+ * ============================================================================
+ *
+ * Depends on Part 4 (Core Infrastructure) helpers — stub block at the bottom,
+ * same pattern as Parts 1 & 2. DELETE stubs once Part 4 lands.
+ *
+ * Sheet: MilkImports
+ *   ImportId | Date | BrandName | MilkType | Quantity | RatePerLiter |
+ *   TotalCost | Supplier | InvoiceNumber | Notes | Status | Version |
+ *   IdempotencyKey | CreatedAt | UpdatedAt
+ *   Status: Draft -> Confirmed -> Reconciled
+ *
+ * Sheet: MilkBrands
+ *   BrandId | BrandName | SupplierName | SupplierPhone | DefaultMilkType |
+ *   RatePerLiter | Status | CreatedAt
+ *
+ * Sheet: MilkTypes
+ *   TypeId | TypeName | Status
+ *
+ * Sheet: DailyLogs (read-only here)
+ *   used to compute "Distributed" for inventory math — see getDailyInventory
+ *
+ * Settings keys referenced (read via getSettingValue, defined in Part 4):
+ *   MinDailyStockThreshold, MilkCategoryNames
+ *
+ * Security/business rules from spec Section 11 applied here:
+ *   - expectedVersion REQUIRED on updateMilkImport (Rule 13)
+ *   - Version incremented on confirm too (B-I-08)
+ *   - MILK_IMPORTS included in eraseAllData; MILK_BRANDS/MILK_TYPES excluded
+ *     (catalog data, not transactional) — see Part 5 for eraseAllData itself
+ * ============================================================================
+ */
+
+const MAX_IMPORT_QTY = 5000; // litres — sanity cap per B-I import
+const IMPORT_STATUSES = ['Draft', 'Confirmed', 'Reconciled'];
+
+function round2_imports(n) {
+  return Math.round(Number(n) * 100) / 100;
+}
+
+// ----------------------------------------------------------------------------
+// VALIDATION
+// ----------------------------------------------------------------------------
+
+function validateMilkImportPayload(payload, isUpdate) {
+  const errors = [];
+
+  if (!isUpdate || payload.date !== undefined) {
+    if (!payload.date || !/^\d{4}-\d{2}-\d{2}$/.test(payload.date)) errors.push('date must be YYYY-MM-DD');
+  }
+  if (!isUpdate || payload.brandName !== undefined) {
+    if (!payload.brandName || !String(payload.brandName).trim()) errors.push('brandName is required');
+  }
+  if (!isUpdate || payload.milkType !== undefined) {
+    if (!payload.milkType) errors.push('milkType is required');
+  }
+  if (!isUpdate || payload.quantity !== undefined) {
+    const q = Number(payload.quantity);
+    if (isNaN(q) || q <= 0) errors.push('quantity must be a positive number');
+    else if (q > MAX_IMPORT_QTY) errors.push('quantity exceeds maximum allowed (' + MAX_IMPORT_QTY + 'L)');
+  }
+  if (!isUpdate || payload.ratePerLiter !== undefined) {
+    const r = Number(payload.ratePerLiter);
+    if (isNaN(r) || r <= 0) errors.push('ratePerLiter must be a positive number');
+    else if (r > 500) errors.push('ratePerLiter looks implausibly high — check input');
+  }
+  if (payload.invoiceNumber !== undefined && String(payload.invoiceNumber).length > 100) {
+    errors.push('invoiceNumber too long (max 100 chars)');
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+// ----------------------------------------------------------------------------
+// MILK TYPE LOOKUP (validates against active MilkTypes sheet, not a hardcoded
+// list — your spec seeds Full Cream / Toned / Double Toned but lets the
+// catalog grow, e.g. Skimmed / Standardised)
+// ----------------------------------------------------------------------------
+
+function isValidActiveMilkType(typeName) {
+  const sheet = getSheet('MILK_TYPES');
+  const hdr = buildHeaderMap(sheet);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return false;
+  const values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  return values.some(row => row[hdr['TypeName']] === typeName && row[hdr['Status']] === 'Active');
+}
+
+// ----------------------------------------------------------------------------
+// MILK IMPORT ACTIONS
+// ----------------------------------------------------------------------------
+
+/**
+ * addMilkImport — creates a Draft import row. Idempotent via idempotencyKey.
+ * Required: date, brandName, milkType, quantity, ratePerLiter, idempotencyKey
+ * Optional: supplier, invoiceNumber, notes
+ */
+function addMilkImport(payload) {
+  const v = validateMilkImportPayload(payload, false);
+  if (!v.valid) return respond(false, null, { code: 'VALIDATION_ERROR', message: v.errors.join('; ') });
+
+  if (!isValidActiveMilkType(payload.milkType)) {
+    return respond(false, null, { code: 'VALIDATION_ERROR', message: 'Invalid or inactive milk type: ' + payload.milkType });
+  }
+
+  return withLock(function () {
+    const sheet = getSheet('MILK_IMPORTS');
+    const hdr = buildHeaderMap(sheet);
+
+    if (payload.idempotencyKey) {
+      const dup = findRowByColumnValue(sheet, hdr, 'IdempotencyKey', payload.idempotencyKey);
+      if (dup) {
+        return respond(true, {
+          importId: dup.rowValues[hdr['ImportId']],
+          totalCost: dup.rowValues[hdr['TotalCost']],
+          duplicate: true
+        });
+      }
+    }
+
+    const importId = 'IMP-' + Utilities.getUuid().substring(0, 8).toUpperCase();
+    const now = Utilities.formatDate(new Date(), 'Asia/Kolkata', "yyyy-MM-dd'T'HH:mm:ssXXX");
+    const quantity = Number(payload.quantity);
+    const rate = Number(payload.ratePerLiter);
+    const totalCost = round2_imports(quantity * rate);
+
+    const row = [];
+    row[hdr['ImportId']] = importId;
+    row[hdr['Date']] = payload.date;
+    row[hdr['BrandName']] = sanitizeForText(payload.brandName).trim();
+    row[hdr['MilkType']] = payload.milkType;
+    row[hdr['Quantity']] = quantity;
+    row[hdr['RatePerLiter']] = rate;
+    row[hdr['TotalCost']] = totalCost;
+    row[hdr['Supplier']] = sanitizeForText(payload.supplier || '');
+    row[hdr['InvoiceNumber']] = sanitizeForText(payload.invoiceNumber || '');
+    row[hdr['Notes']] = sanitizeForText(payload.notes || '');
+    row[hdr['Status']] = 'Draft';
+    row[hdr['Version']] = 1;
+    row[hdr['IdempotencyKey']] = payload.idempotencyKey || '';
+    row[hdr['CreatedAt']] = now;
+    row[hdr['UpdatedAt']] = now;
+
+    safeAppend(sheet, row);
+    writeActivityLog('addMilkImport', payload, { importId: importId, totalCost: totalCost });
+
+    return respond(true, { importId: importId, totalCost: totalCost });
+  });
+}
+
+/**
+ * updateMilkImport — partial update of a Draft import. Confirmed/Reconciled
+ * imports cannot be edited (must be a fresh import or a manual correction
+ * via the spreadsheet, by design — once stock math depends on it, silently
+ * editing quantity/rate would corrupt inventory reconciliation).
+ * Required: importId, expectedVersion
+ */
+function updateMilkImport(payload) {
+  if (!payload.importId) return respond(false, null, { code: 'VALIDATION_ERROR', message: 'importId is required' });
+  if (payload.expectedVersion === undefined || payload.expectedVersion === null) {
+    return respond(false, null, { code: 'VALIDATION_ERROR', message: 'expectedVersion is required for updates' });
+  }
+
+  const v = validateMilkImportPayload(payload, true);
+  if (!v.valid) return respond(false, null, { code: 'VALIDATION_ERROR', message: v.errors.join('; ') });
+
+  if (payload.milkType !== undefined && !isValidActiveMilkType(payload.milkType)) {
+    return respond(false, null, { code: 'VALIDATION_ERROR', message: 'Invalid or inactive milk type: ' + payload.milkType });
+  }
+
+  return withLock(function () {
+    const sheet = getSheet('MILK_IMPORTS');
+    const hdr = buildHeaderMap(sheet);
+    const found = findRowById(sheet, hdr['ImportId'], payload.importId);
+    if (!found) return respond(false, null, { code: 'NOT_FOUND', message: 'Import not found: ' + payload.importId });
+
+    if (found.rowValues[hdr['Status']] !== 'Draft') {
+      return respond(false, null, { code: 'INVALID_STATE', message: 'Only Draft imports can be edited (current status: ' + found.rowValues[hdr['Status']] + ')' });
+    }
+
+    const currentVersion = Number(found.rowValues[hdr['Version']]);
+    if (currentVersion !== Number(payload.expectedVersion)) {
+      return respond(false, null, {
+        code: 'VERSION_CONFLICT',
+        message: 'Import was modified by another process',
+        currentVersion: currentVersion
+      });
+    }
+
+    const now = Utilities.formatDate(new Date(), 'Asia/Kolkata', "yyyy-MM-dd'T'HH:mm:ssXXX");
+    const updated = found.rowValues.slice();
+
+    if (payload.date !== undefined) updated[hdr['Date']] = payload.date;
+    if (payload.brandName !== undefined) updated[hdr['BrandName']] = sanitizeForText(payload.brandName).trim();
+    if (payload.milkType !== undefined) updated[hdr['MilkType']] = payload.milkType;
+    if (payload.supplier !== undefined) updated[hdr['Supplier']] = sanitizeForText(payload.supplier);
+    if (payload.invoiceNumber !== undefined) updated[hdr['InvoiceNumber']] = sanitizeForText(payload.invoiceNumber);
+    if (payload.notes !== undefined) updated[hdr['Notes']] = sanitizeForText(payload.notes);
+
+    const newQty = payload.quantity !== undefined ? Number(payload.quantity) : Number(updated[hdr['Quantity']]);
+    const newRate = payload.ratePerLiter !== undefined ? Number(payload.ratePerLiter) : Number(updated[hdr['RatePerLiter']]);
+    updated[hdr['Quantity']] = newQty;
+    updated[hdr['RatePerLiter']] = newRate;
+    updated[hdr['TotalCost']] = round2_imports(newQty * newRate);
+
+    updated[hdr['Version']] = currentVersion + 1;
+    updated[hdr['UpdatedAt']] = now;
+
+    sheet.getRange(found.rowIndex, 1, 1, updated.length).setValues([updated]);
+    writeActivityLog('updateMilkImport', payload, { importId: payload.importId, newVersion: currentVersion + 1 });
+
+    return respond(true, { importId: payload.importId, newVersion: currentVersion + 1, totalCost: updated[hdr['TotalCost']] });
+  });
+}
+
+/**
+ * confirmMilkImport — moves Draft -> Confirmed. From this point the import
+ * counts toward inventory (getDailyInventory). Version is incremented here
+ * too (B-I-08), even though only Status changes, so any client holding a
+ * stale Draft version can't silently re-edit a just-confirmed import.
+ */
+function confirmMilkImport(payload) {
+  if (!payload.importId) return respond(false, null, { code: 'VALIDATION_ERROR', message: 'importId is required' });
+
+  return withLock(function () {
+    const sheet = getSheet('MILK_IMPORTS');
+    const hdr = buildHeaderMap(sheet);
+    const found = findRowById(sheet, hdr['ImportId'], payload.importId);
+    if (!found) return respond(false, null, { code: 'NOT_FOUND', message: 'Import not found' });
+
+    if (found.rowValues[hdr['Status']] !== 'Draft') {
+      return respond(false, null, { code: 'INVALID_STATE', message: 'Only Draft imports can be confirmed (current: ' + found.rowValues[hdr['Status']] + ')' });
+    }
+
+    const now = Utilities.formatDate(new Date(), 'Asia/Kolkata', "yyyy-MM-dd'T'HH:mm:ssXXX");
+    const newVersion = Number(found.rowValues[hdr['Version']]) + 1;
+
+    sheet.getRange(found.rowIndex, hdr['Status'] + 1).setValue('Confirmed');
+    sheet.getRange(found.rowIndex, hdr['Version'] + 1).setValue(newVersion);
+    sheet.getRange(found.rowIndex, hdr['UpdatedAt'] + 1).setValue(now);
+
+    writeActivityLog('confirmMilkImport', payload, { importId: payload.importId, newVersion: newVersion });
+    return respond(true, { importId: payload.importId, newVersion: newVersion });
+  });
+}
+
+/**
+ * deleteMilkImport — hard delete, but ONLY for Draft imports. Once Confirmed,
+ * an import has (or may have) been counted in inventory/reconciliation —
+ * deleting it would silently corrupt stock history, so it's blocked.
+ */
+function deleteMilkImport(payload) {
+  if (!payload.importId) return respond(false, null, { code: 'VALIDATION_ERROR', message: 'importId is required' });
+
+  return withLock(function () {
+    const sheet = getSheet('MILK_IMPORTS');
+    const hdr = buildHeaderMap(sheet);
+    const found = findRowById(sheet, hdr['ImportId'], payload.importId);
+    if (!found) return respond(false, null, { code: 'NOT_FOUND', message: 'Import not found' });
+
+    if (found.rowValues[hdr['Status']] !== 'Draft') {
+      return respond(false, null, { code: 'INVALID_STATE', message: 'Only Draft imports can be deleted' });
+    }
+
+    sheet.deleteRow(found.rowIndex);
+    writeActivityLog('deleteMilkImport', payload, { importId: payload.importId });
+    return respond(true, { importId: payload.importId });
+  });
+}
+
+// ----------------------------------------------------------------------------
+// READ ACTIONS
+// ----------------------------------------------------------------------------
+
+/**
+ * getMilkImports — paginated, filterable by month, brandName, status
+ */
+function getMilkImports(payload) {
+  const sheet = getSheet('MILK_IMPORTS');
+  const hdr = buildHeaderMap(sheet);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return respond(true, { imports: [], total: 0, hasMore: false });
+
+  const values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  let filtered = values.filter(row => {
+    if (payload.month && !String(row[hdr['Date']]).startsWith(payload.month)) return false;
+    if (payload.brandName && row[hdr['BrandName']] !== payload.brandName) return false;
+    if (payload.status && row[hdr['Status']] !== payload.status) return false;
+    return true;
+  });
+
+  // Most recent first
+  filtered.sort((a, b) => (a[hdr['Date']] < b[hdr['Date']] ? 1 : -1));
+
+  const total = filtered.length;
+  const limit = Math.min(Number(payload.limit) || 20, 200);
+  const offset = Number(payload.offset) || 0;
+  const page = filtered.slice(offset, offset + limit);
+
+  const imports = page.map(row => ({
+    importId: row[hdr['ImportId']],
+    date: row[hdr['Date']],
+    brandName: row[hdr['BrandName']],
+    milkType: row[hdr['MilkType']],
+    quantity: row[hdr['Quantity']],
+    ratePerLiter: row[hdr['RatePerLiter']],
+    totalCost: row[hdr['TotalCost']],
+    invoiceNumber: row[hdr['InvoiceNumber']],
+    status: row[hdr['Status']],
+    version: row[hdr['Version']],
+  }));
+
+  return respond(true, { imports: imports, total: total, hasMore: offset + limit < total });
+}
+
+/**
+ * getMilkImportSummary — totals for Confirmed+Reconciled imports in a month
+ * Required: month (YYYY-MM)
+ */
+function getMilkImportSummary(payload) {
+  if (!payload.month || !/^\d{4}-\d{2}$/.test(payload.month)) {
+    return respond(false, null, { code: 'VALIDATION_ERROR', message: 'month must be YYYY-MM' });
+  }
+
+  const sheet = getSheet('MILK_IMPORTS');
+  const hdr = buildHeaderMap(sheet);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return respond(true, { summary: { totalQuantity: 0, totalCost: 0 } });
+
+  const values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  let totalQuantity = 0, totalCost = 0;
+
+  values.forEach(row => {
+    if (!String(row[hdr['Date']]).startsWith(payload.month)) return;
+    if (row[hdr['Status']] === 'Draft') return; // only counted/confirmed stock
+    totalQuantity += Number(row[hdr['Quantity']]) || 0;
+    totalCost += Number(row[hdr['TotalCost']]) || 0;
+  });
+
+  return respond(true, { summary: { totalQuantity: round2_imports(totalQuantity), totalCost: round2_imports(totalCost) } });
+}
+
+/**
+ * getDailyInventory — per-day Imported / Distributed / Stock for a month.
+ *
+ * "Distributed" sums DailyLogs.Qty where Delivered=true for that date, but
+ * ONLY for products considered "milk" — controlled by Settings.MilkCategoryNames
+ * if set, falling back to ALL delivered products if Products.Category is
+ * unused (this mirrors B158 from your migration notes: "if Products.Category
+ * is unused... getDailyInventory falls back to summing all delivered
+ * products, documented, not silent").
+ *
+ * categoryFilterActive in the response tells the caller which mode was used.
+ *
+ * Required: month (YYYY-MM)
+ */
+function getDailyInventory(payload) {
+  if (!payload.month || !/^\d{4}-\d{2}$/.test(payload.month)) {
+    return respond(false, null, { code: 'VALIDATION_ERROR', message: 'month must be YYYY-MM' });
+  }
+
+  // 1. Imports per day (Confirmed + Reconciled only)
+  const impSheet = getSheet('MILK_IMPORTS');
+  const impHdr = buildHeaderMap(impSheet);
+  const impLastRow = impSheet.getLastRow();
+  const importedByDate = {};
+  if (impLastRow >= 2) {
+    const imports = impSheet.getRange(2, 1, impLastRow - 1, impSheet.getLastColumn()).getValues();
+    imports.forEach(row => {
+      if (!String(row[impHdr['Date']]).startsWith(payload.month)) return;
+      if (row[impHdr['Status']] === 'Draft') return;
+      const d = row[impHdr['Date']];
+      importedByDate[d] = (importedByDate[d] || 0) + Number(row[impHdr['Quantity']]);
+    });
+  }
+
+  // 2. Determine category filter mode (Settings.MilkCategoryNames, optional)
+  const milkCategoryNames = getSettingValue('MilkCategoryNames'); // e.g. "Milk,Dairy" or '' if unset
+  const categoryFilterActive = !!(milkCategoryNames && String(milkCategoryNames).trim());
+  let allowedProducts = null; // null = no filtering = sum ALL delivered products
+  if (categoryFilterActive) {
+    // In a fuller implementation this would cross-reference a Products sheet's
+    // Category column. Documented here as a TODO since Products schema isn't
+    // defined in Parts 1-3 of this build — see migration note B158.
+    allowedProducts = null; // left permissive until Products integration lands
+  }
+
+  // 3. Distributed per day, from DailyLogs
+  const logSheet = getSheet('DAILY_LOGS');
+  const logHdr = buildHeaderMap(logSheet);
+  const logLastRow = logSheet.getLastRow();
+  const distributedByDate = {};
+  if (logLastRow >= 2) {
+    const logs = logSheet.getRange(2, 1, logLastRow - 1, logSheet.getLastColumn()).getValues();
+    logs.forEach(row => {
+      if (!String(row[logHdr['Date']]).startsWith(payload.month)) return;
+      if (!row[logHdr['Delivered']]) return;
+      if (allowedProducts && allowedProducts.indexOf(row[logHdr['Product']]) === -1) return;
+      const d = row[logHdr['Date']];
+      distributedByDate[d] = (distributedByDate[d] || 0) + Number(row[logHdr['Qty']]);
+    });
+  }
+
+  // 4. Build day-by-day inventory, most recent first, running stock balance
+  const allDates = Array.from(new Set(Object.keys(importedByDate).concat(Object.keys(distributedByDate)))).sort();
+  const minStock = Number(getSettingValue('MinDailyStockThreshold')) || 0;
+
+  let runningStock = 0;
+  const inventory = [];
+  const lowStockDays = [];
+
+  allDates.forEach(d => {
+    const imported = round2_imports(importedByDate[d] || 0);
+    const distributed = round2_imports(distributedByDate[d] || 0);
+    runningStock = round2_imports(runningStock + imported - distributed);
+    inventory.push({ date: d, imported: imported, distributed: distributed, stock: runningStock });
+    if (minStock > 0 && runningStock < minStock) lowStockDays.push(d);
+  });
+
+  inventory.reverse(); // most recent first, per imports.js's `latest = inventory[0]` usage
+
+  writeActivityLog('getDailyInventory', payload, { days: inventory.length });
+  return respond(true, {
+    inventory: inventory,
+    categoryFilterActive: categoryFilterActive,
+    lowStockDays: lowStockDays
+  });
+}
+
+/**
+ * reconcileMilkInventory — two modes:
+ *   action='audit'  -> read-only health check, returns { healthy, issues }
+ *   action='reconcile' -> moves Confirmed imports for the month to
+ *                          Reconciled (final, locked-in-spirit state),
+ *                          bumping Version. Does not touch Draft imports.
+ * Required: month (YYYY-MM), action ('audit' | 'reconcile')
+ */
+function reconcileMilkInventory(payload) {
+  if (!payload.month || !/^\d{4}-\d{2}$/.test(payload.month)) {
+    return respond(false, null, { code: 'VALIDATION_ERROR', message: 'month must be YYYY-MM' });
+  }
+  if (payload.action !== 'audit' && payload.action !== 'reconcile') {
+    return respond(false, null, { code: 'VALIDATION_ERROR', message: "action must be 'audit' or 'reconcile'" });
+  }
+
+  return withLock(function () {
+    const sheet = getSheet('MILK_IMPORTS');
+    const hdr = buildHeaderMap(sheet);
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return respond(true, { healthy: true, issues: [] });
+
+    const values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+    const issues = [];
+    const toReconcile = [];
+
+    values.forEach((row, i) => {
+      if (!String(row[hdr['Date']]).startsWith(payload.month)) return;
+      if (row[hdr['Status']] === 'Draft') {
+        issues.push({ importId: row[hdr['ImportId']], issue: 'Still in Draft status — not counted in inventory' });
+      }
+      if (row[hdr['Status']] === 'Confirmed') {
+        toReconcile.push(i + 2); // rowIndex
+      }
+      const qty = Number(row[hdr['Quantity']]);
+      const rate = Number(row[hdr['RatePerLiter']]);
+      const expectedTotal = round2_imports(qty * rate);
+      if (round2_imports(row[hdr['TotalCost']]) !== expectedTotal) {
+        issues.push({ importId: row[hdr['ImportId']], issue: 'TotalCost drift: stored=' + row[hdr['TotalCost']] + ' expected=' + expectedTotal });
+      }
+    });
+
+    if (payload.action === 'audit') {
+      writeActivityLog('reconcileMilkInventory', payload, { mode: 'audit', issues: issues.length });
+      return respond(true, { healthy: issues.length === 0, issues: issues });
+    }
+
+    // action === 'reconcile'
+    const now = Utilities.formatDate(new Date(), 'Asia/Kolkata', "yyyy-MM-dd'T'HH:mm:ssXXX");
+    let reconciledCount = 0;
+    toReconcile.forEach(rowIndex => {
+      const currentVersion = Number(sheet.getRange(rowIndex, hdr['Version'] + 1).getValue());
+      sheet.getRange(rowIndex, hdr['Status'] + 1).setValue('Reconciled');
+      sheet.getRange(rowIndex, hdr['Version'] + 1).setValue(currentVersion + 1);
+      sheet.getRange(rowIndex, hdr['UpdatedAt'] + 1).setValue(now);
+      reconciledCount++;
+    });
+
+    writeActivityLog('reconcileMilkInventory', payload, { mode: 'reconcile', reconciledCount: reconciledCount });
+    return respond(true, { healthy: issues.length === 0, issues: issues, reconciledCount: reconciledCount });
+  });
+}
+
+// ----------------------------------------------------------------------------
+// MILK BRAND ACTIONS
+// ----------------------------------------------------------------------------
+
+/**
+ * addMilkBrand — adds a new brand to the catalog. Duplicate active brand
+ * names are rejected (case-insensitive) to keep import filters/selects clean.
+ * Required: brandName
+ * Optional: supplierName, supplierPhone, defaultMilkType, ratePerLiter
+ */
+function addMilkBrand(payload) {
+  if (!payload.brandName || !String(payload.brandName).trim()) {
+    return respond(false, null, { code: 'VALIDATION_ERROR', message: 'brandName is required' });
+  }
+
+  return withLock(function () {
+    const sheet = getSheet('MILK_BRANDS');
+    const hdr = buildHeaderMap(sheet);
+    const lastRow = sheet.getLastRow();
+
+    if (lastRow >= 2) {
+      const existing = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+      const nameLower = String(payload.brandName).trim().toLowerCase();
+      const dup = existing.find(row => row[hdr['Status']] === 'Active' && String(row[hdr['BrandName']]).trim().toLowerCase() === nameLower);
+      if (dup) return respond(false, null, { code: 'CONFLICT', message: 'An active brand with this name already exists' });
+    }
+
+    const brandId = 'BRAND-' + Utilities.getUuid().substring(0, 8).toUpperCase();
+    const now = Utilities.formatDate(new Date(), 'Asia/Kolkata', "yyyy-MM-dd'T'HH:mm:ssXXX");
+
+    const row = [];
+    row[hdr['BrandId']] = brandId;
+    row[hdr['BrandName']] = sanitizeForText(payload.brandName).trim();
+    row[hdr['SupplierName']] = sanitizeForText(payload.supplierName || '');
+    row[hdr['SupplierPhone']] = payload.supplierPhone ? normalizePhone(payload.supplierPhone) : '';
+    row[hdr['DefaultMilkType']] = payload.defaultMilkType || '';
+    row[hdr['RatePerLiter']] = payload.ratePerLiter !== undefined ? Number(payload.ratePerLiter) : 0;
+    row[hdr['Status']] = 'Active';
+    row[hdr['CreatedAt']] = now;
+
+    safeAppend(sheet, row);
+    writeActivityLog('addMilkBrand', payload, { brandId: brandId });
+
+    return respond(true, { brandId: brandId });
+  });
+}
+
+/**
+ * getMilkBrands — list, optionally filtered by status (defaults to all)
+ */
+function getMilkBrands(payload) {
+  const sheet = getSheet('MILK_BRANDS');
+  const hdr = buildHeaderMap(sheet);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return respond(true, { brands: [] });
+
+  const limit = Math.min(Number(payload.limit) || 200, 500);
+  const values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  let filtered = values;
+  if (payload.status) filtered = filtered.filter(row => row[hdr['Status']] === payload.status);
+  filtered = filtered.slice(0, limit);
+
+  const brands = filtered.map(row => ({
+    brandId: row[hdr['BrandId']],
+    brandName: row[hdr['BrandName']],
+    supplierName: row[hdr['SupplierName']],
+    supplierPhone: row[hdr['SupplierPhone']],
+    defaultMilkType: row[hdr['DefaultMilkType']],
+    ratePerLiter: row[hdr['RatePerLiter']],
+    status: row[hdr['Status']],
+  }));
+
+  return respond(true, { brands: brands });
+}
+
+/**
+ * getMilkTypes — list, optionally filtered by status
+ */
+function getMilkTypes(payload) {
+  const sheet = getSheet('MILK_TYPES');
+  const hdr = buildHeaderMap(sheet);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return respond(true, { types: [] });
+
+  const values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  let filtered = values;
+  if (payload.status) filtered = filtered.filter(row => row[hdr['Status']] === payload.status);
+
+  const types = filtered.map(row => ({
+    typeId: row[hdr['TypeId']],
+    typeName: row[hdr['TypeName']],
+    status: row[hdr['Status']],
+  }));
+
+  return respond(true, { types: types });
+}
+
+// ----------------------------------------------------------------------------
+// TEMPORARY STUBS — REMOVE ONCE PART 4 (CORE INFRASTRUCTURE) IS MERGED
+// ----------------------------------------------------------------------------
+
+if (typeof respond === 'undefined') {
+  function respond(success, data, error) {
+    const body = { success: success };
+    if (success) body.data = data || {};
+    else body.error = error || { code: 'UNKNOWN_ERROR', message: 'Unspecified error' };
+    return ContentService.createTextOutput(JSON.stringify(body)).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+if (typeof withLock === 'undefined') {
+  function withLock(fn) {
+    const lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(10000);
+      return fn();
+    } catch (e) {
+      return respond(false, null, { code: 'LOCK_ERROR', message: e.message });
+    } finally {
+      lock.releaseLock();
+    }
+  }
+}
+
+if (typeof buildHeaderMap === 'undefined') {
+  function buildHeaderMap(sheet) {
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const map = {};
+    headers.forEach((h, i) => { map[String(h).trim()] = i; });
+    return map;
+  }
+}
+
+if (typeof getSheet === 'undefined') {
+  const SHEET_NAMES_STUB = {
+    CUSTOMERS: 'Customers',
+    DAILY_LOGS: 'DailyLogs',
+    PAUSE_PERIODS: 'PausePeriods',
+    BILLS: 'Bills',
+    PAYMENTS: 'Payments',
+    ADJUSTMENTS: 'Adjustments',
+    MILK_IMPORTS: 'MilkImports',
+    MILK_BRANDS: 'MilkBrands',
+    MILK_TYPES: 'MilkTypes',
+  };
+  function getSheet(constName) {
+    const name = SHEET_NAMES_STUB[constName] || constName;
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+    if (!sheet) throw new Error('Sheet not found: ' + name);
+    return sheet;
+  }
+}
+
+if (typeof safeAppend === 'undefined') {
+  function safeAppend(sheet, rowArray) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, 1, rowArray.length).setValues([rowArray]);
+  }
+}
+
+if (typeof findRowById === 'undefined') {
+  function findRowById(sheet, idColIdx, idVal) {
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return null;
+    const values = sheet.getRange(2, idColIdx + 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < values.length; i++) {
+      if (values[i][0] === idVal) {
+        const fullRow = sheet.getRange(i + 2, 1, 1, sheet.getLastColumn()).getValues()[0];
+        return { rowIndex: i + 2, rowValues: fullRow };
+      }
+    }
+    return null;
+  }
+}
+
+if (typeof findRowByColumnValue === 'undefined') {
+  function findRowByColumnValue(sheet, hdr, colName, value) {
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return null;
+    const colIdx = hdr[colName];
+    if (colIdx === undefined) return null;
+    const values = sheet.getRange(2, colIdx + 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < values.length; i++) {
+      if (values[i][0] === value) {
+        const fullRow = sheet.getRange(i + 2, 1, 1, sheet.getLastColumn()).getValues()[0];
+        return { rowIndex: i + 2, rowValues: fullRow };
+      }
+    }
+    return null;
+  }
+}
+
+if (typeof writeActivityLog === 'undefined') {
+  function writeActivityLog(action, payload, result) {
+    try {
+      Logger.log('[ActivityLog] ' + action + ' ' + JSON.stringify(result));
+    } catch (e) { /* never throw from logging */ }
+  }
+}
+
+if (typeof sanitizeForText === 'undefined') {
+  function sanitizeForText(str) {
+    return String(str == null ? '' : str).replace(/[<>]/g, '');
+  }
+}
+
+if (typeof normalizePhone === 'undefined') {
+  function normalizePhone(phone) {
+    let digits = String(phone).replace(/\D/g, '');
+    if (digits.length === 10) digits = '91' + digits;
+    return digits;
+  }
+}
+
+if (typeof getSettingValue === 'undefined') {
+  function getSettingValue(key) {
+    // Minimal stand-in: reads from a 'Settings' sheet with Key|Value columns.
+    // Part 4 will likely cache this via PropertiesService for performance.
+    try {
+      const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Settings');
+      if (!sheet) return '';
+      const lastRow = sheet.getLastRow();
+      if (lastRow < 2) return '';
+      const values = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+      const found = values.find(row => row[0] === key);
+      return found ? found[1] : '';
+    } catch (e) {
+      return '';
+    }
+  }
+}
