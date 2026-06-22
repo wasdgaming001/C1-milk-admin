@@ -138,7 +138,7 @@ class WriteQueueManager {
           window.updateUnsavedIndicator();
         }
       };
-      window.addEventListener('unload', () => this._channel?.close());
+      window.addEventListener('beforeunload', () => this._channel?.close());
     }
   }
 

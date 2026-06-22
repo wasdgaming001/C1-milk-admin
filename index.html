@@ -241,11 +241,52 @@ function _setLoading(on) {
   document.getElementById('pin-keypad')?.querySelectorAll('button').forEach(b => { b.disabled = on; });
 }
 
+async function _finishLogin(data) {
+  if (data.success) {
+    saveSession(data.data.token, data.data.sessionSecret);
+    _showApp();
+    return true;
+  }
+
+  const code = data.error?.code;
+  if (code === 'RATE_LIMITED') {
+    _showError('Too many attempts. Try again tomorrow.');
+  } else if (code === 'INVALID_PIN') {
+    _showError('Incorrect PIN. Please try again.');
+  } else if (code === 'NOT_CONFIGURED') {
+    _showError('PIN not yet set up. Creating your first PIN…');
+  } else {
+    _showError(data.error?.message || 'Login failed. Try again.');
+  }
+  return false;
+}
+
+async function _setupInitialPIN(pin) {
+  const setupRes = await fetch('/api', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'rotatePIN', payload: { newPin: pin, confirmPin: pin } }),
+  });
+  const setupData = await setupRes.json();
+
+  if (!setupData.success) {
+    _showError(setupData.error?.message || 'Unable to create PIN.');
+    return false;
+  }
+
+  const verifyRes = await fetch('/api', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'verifyPIN', payload: { pin } }),
+  });
+  const verifyData = await verifyRes.json();
+  return _finishLogin(verifyData);
+}
+
 async function _submitPIN() {
   _setLoading(true);
   _clearError();
   try {
-    // verifyPIN is a PUBLIC_ACTION — no token required
     const res = await fetch('/api', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -254,20 +295,11 @@ async function _submitPIN() {
     const data = await res.json();
 
     if (data.success) {
-      // Store the session — these stay in sessionStorage (cleared on tab close)
-      saveSession(data.data.token, data.data.sessionSecret);
-      _showApp();
+      await _finishLogin(data);
+    } else if (data.error?.code === 'NOT_CONFIGURED') {
+      await _setupInitialPIN(_pin);
     } else {
-      const code = data.error?.code;
-      if (code === 'RATE_LIMITED') {
-        _showError('Too many attempts. Try again tomorrow.');
-      } else if (code === 'INVALID_PIN') {
-        _showError('Incorrect PIN. Please try again.');
-      } else if (code === 'NOT_CONFIGURED') {
-        _showError('PIN not yet set up. Contact your administrator.');
-      } else {
-        _showError(data.error?.message || 'Login failed. Try again.');
-      }
+      await _finishLogin(data);
     }
   } catch (err) {
     _showError('Network error. Check your connection.');

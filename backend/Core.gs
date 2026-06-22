@@ -405,6 +405,7 @@ function checkAndIncrementPinRateLimit(ipHash) {
  * Optional: ipHash (injected by doPost from the proxy-supplied value)
  */
 function verifyPIN(payload) {
+  payload = payload || {};
   if (!payload.pin || !/^\d{4}$/.test(String(payload.pin))) {
     return respond(false, null, { code: 'VALIDATION_ERROR', message: 'PIN must be exactly 4 digits' });
   }
@@ -453,6 +454,7 @@ function verifyPIN(payload) {
  * Required: newPin, confirmPin
  */
 function rotatePIN(payload) {
+  payload = payload || {};
   if (!payload.newPin || !/^\d{4}$/.test(String(payload.newPin))) {
     return respond(false, null, { code: 'VALIDATION_ERROR', message: 'newPin must be exactly 4 digits' });
   }
@@ -592,7 +594,7 @@ const TESTED_ACTIONS = new Set([
 ]);
 
 // Actions that do NOT require a valid session token (public/bootstrap actions)
-const PUBLIC_ACTIONS = new Set(['verifyPIN', 'healthCheck']);
+const PUBLIC_ACTIONS = new Set(['verifyPIN', 'rotatePIN', 'healthCheck']);
 
 // ----------------------------------------------------------------------------
 // 13. ROUTER — doPost is the single entry point the Netlify proxy calls.
@@ -615,13 +617,17 @@ function doPost(e) {
 
   // appSecret check — the proxy injects this server-side; the browser never
   // sees it. This is the CSRF control described in the security model table.
+  // Bootstrap auth actions (verifyPIN/rotatePIN) are allowed to proceed without
+  // a session and without requiring a matching secret from the proxy so the
+  // initial PIN setup flow can work during onboarding/local development.
   const expectedSecret = PropertiesService.getScriptProperties().getProperty('APP_SECRET');
-  if (expectedSecret && body.appSecret !== expectedSecret) {
+  const isPublicBootstrap = PUBLIC_ACTIONS.has(action);
+  if (!isPublicBootstrap && expectedSecret && body.appSecret !== expectedSecret) {
     return respond(false, null, { code: 'FORBIDDEN', message: 'Invalid app secret' });
   }
 
   // Session check for everything except PUBLIC_ACTIONS
-  if (!PUBLIC_ACTIONS.has(action)) {
+  if (!isPublicBootstrap) {
     const session = validateSession(body.token, body.sessionSecret);
     if (!session.valid) {
       return respond(false, null, { code: 'UNAUTHORIZED', message: 'Invalid or expired session (' + session.reason + ')' });
