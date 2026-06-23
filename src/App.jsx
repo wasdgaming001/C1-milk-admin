@@ -12,7 +12,7 @@ const fmt = n => {
   if (n === undefined || n === null || isNaN(num)) return "₹0.00";
   return "₹" + num.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
-const getToday = () => new Date().toISOString().slice(0, 10);
+const getToday = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 // Per-product rate (₹/L) — replaces the old flat ₹32/L magic number
@@ -256,7 +256,7 @@ export default function App() {
   const [impFilter, setImpFilter] = useState({ month:"", brand:"", status:"" });
   const [billFilter, setBillFilter] = useState("All");
   const [billMonth, setBillMonth] = useState("2025-01");
-  const [logDate, setLogDate] = useState(today);
+  const [logDate, setLogDate] = useState('2025-01-18');
   const [diagRan, setDiagRan] = useState(false);
 
   // form state

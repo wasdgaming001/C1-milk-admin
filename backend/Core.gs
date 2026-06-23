@@ -1,6 +1,5 @@
 
 
-
 /**
  * ============================================================================
  * MILK DELIVERY ADMIN — V17 BACKEND
@@ -14,11 +13,10 @@
  * pointless, since this file's versions are what should actually run.
  *
  * NOTE: healthCheck(), runDiagnostics(), getSheetNamesAction(), eraseAllData(),
- * runMigration() are declared (and referenced by the router below) but their
- * full bodies live in Part 5 (Diagnostics/Admin Actions). healthCheck() gets
- * a minimal working version here since PUBLIC_ACTIONS / doPost depend on it
- * being callable immediately — Part 5 will be the authoritative version if
- * the two ever diverge; delete this file's copy at that point.
+ * runMigration() are declared (and referenced by the router below). Their
+ * full bodies live in Part 5 (Admin.gs / Diagnostics & Admin Actions), which
+ * is the AUTHORITATIVE copy. Core.gs does NOT define healthCheck() here —
+ * the router dispatches to the Part 5 implementation directly.
  *
  * Contents:
  *   1.  Sheet name constants
@@ -36,7 +34,6 @@
  *  13.  Session validation
  *  14.  ALLOWED_ACTIONS / TESTED_ACTIONS registry
  *  15.  doPost() router
- *  16.  healthCheck() — minimal version, see note above
  * ============================================================================
  */
 
@@ -600,6 +597,12 @@ const PUBLIC_ACTIONS = new Set(['verifyPIN', 'rotatePIN', 'healthCheck']);
 // 13. ROUTER — doPost is the single entry point the Netlify proxy calls.
 //     Apps Script web apps only support doGet/doPost as true entry points;
 //     everything else in this codebase is invoked indirectly through here.
+//
+//     NOTE: healthCheck(), runDiagnostics(), getSheetNamesAction(),
+//     eraseAllData(), runMigration() are NOT defined in this file. Their
+//     implementations live in Part 5 (Admin.gs). The router below calls
+//     them directly; Apps Script resolves them at request time, so as long
+//     as Part 5 is loaded in the same project, the dispatch works.
 // ----------------------------------------------------------------------------
 
 function doPost(e) {
@@ -638,6 +641,8 @@ function doPost(e) {
   payload.ipHash = body.ipHash; // available to actions that want it (e.g. verifyPIN)
 
   // Dispatch — every action function name matches its action string exactly.
+  // healthCheck/runDiagnostics/getSheetNamesAction/eraseAllData/runMigration
+  // resolve to the implementations defined in Part 5 (Admin.gs).
   try {
     switch (action) {
       case 'addCustomer': return addCustomer(payload);
@@ -699,29 +704,7 @@ function doGet(e) {
   ).setMimeType(ContentService.MimeType.JSON);
 }
 
-// ----------------------------------------------------------------------------
-// 14. HEALTH CHECK — minimal version. See file header note: Part 5 owns the
-//     authoritative version if/when the two diverge.
-// ----------------------------------------------------------------------------
-
-function healthCheck() {
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const requiredSheets = Object.keys(SHEET_NAMES).map(function (k) { return SHEET_NAMES[k]; });
-    const actualSheets = ss.getSheets().map(function (s) { return s.getName(); });
-    const missing = requiredSheets.filter(function (name) { return actualSheets.indexOf(name) === -1; });
-
-    const schemaVersion = getSettingValue('SchemaVersion') || '0';
-    const migrationNeeded = Number(schemaVersion) < 17;
-
-    return respond(true, {
-      ok: missing.length === 0,
-      missingSheets: missing,
-      schemaVersion: Number(schemaVersion),
-      migrationNeeded: migrationNeeded,
-      timestamp: nowISTTimestamp(),
-    });
-  } catch (e) {
-    return respond(false, null, { code: 'SYSTEM_ERROR', message: e.message });
-  }
-}
+// NOTE: healthCheck() is intentionally NOT defined in this file.
+// Part 5 (Admin.gs) is the authoritative owner of healthCheck(),
+// runDiagnostics(), getSheetNamesAction(), eraseAllData(), and runMigration().
+// See file header for rationale.

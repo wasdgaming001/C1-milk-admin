@@ -1,6 +1,5 @@
 
 
-
 /**
  * ============================================================================
  * MILK DELIVERY ADMIN — V17 BACKEND
@@ -18,6 +17,7 @@
  *   - sanitizeForText(str)                  -> strips HTML/control chars
  *   - normalizePhone(phone)                 -> "91XXXXXXXXXX"
  *   - findRowById(sheet, idCol, idVal)      -> { rowIndex, rowValues } or null
+ *   - findRowByColumnValue(sheet, hdr, colName, value) -> helper owned by Part 4
  *
  * Until Part 4 lands, minimal stand-in stubs are provided at the bottom of
  * this file (guarded by `typeof x === 'undefined'`) purely so this part is
@@ -471,24 +471,9 @@ function getDailyLogs(payload) {
   return respond(true, { logs: logs });
 }
 
-// ----------------------------------------------------------------------------
-// SHARED LOOKUP HELPER (specific to this part — generic version lives in Part 4)
-// ----------------------------------------------------------------------------
-
-function findRowByColumnValue(sheet, hdr, colName, value) {
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return null;
-  const colIdx = hdr[colName];
-  if (colIdx === undefined) return null;
-  const values = sheet.getRange(2, colIdx + 1, lastRow - 1, 1).getValues();
-  for (let i = 0; i < values.length; i++) {
-    if (values[i][0] === value) {
-      const fullRow = sheet.getRange(i + 2, 1, 1, sheet.getLastColumn()).getValues()[0];
-      return { rowIndex: i + 2, rowValues: fullRow };
-    }
-  }
-  return null;
-}
+// NOTE: findRowByColumnValue() is intentionally NOT defined in this file.
+// It is owned by Part 4 (Core.gs). Declaring it here would cause a duplicate
+// function declaration crash at Apps Script deployment time.
 
 // ----------------------------------------------------------------------------
 // TEMPORARY STUBS — REMOVE ONCE PART 4 (CORE INFRASTRUCTURE) IS MERGED

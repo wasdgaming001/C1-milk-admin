@@ -109,7 +109,7 @@ async function callAppsScript(body) {
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
-exports.handler = async function (event) {
+export const handler = async function (event) {
   const origin = (event.headers['origin'] || event.headers['Origin'] || '').replace(/\/$/, '');
   const corsHeaders = buildCorsHeaders(origin);
 

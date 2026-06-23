@@ -617,21 +617,9 @@ function reconcileBillingLedger(payload) {
   });
 }
 
-// ----------------------------------------------------------------------------
-// SHARED HELPER specific to this part
-// ----------------------------------------------------------------------------
-
-function findRowByTwoColumns(sheet, hdr, col1, val1, col2, val2) {
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return null;
-  const values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
-  for (let i = 0; i < values.length; i++) {
-    if (values[i][hdr[col1]] === val1 && values[i][hdr[col2]] === val2) {
-      return { rowIndex: i + 2, rowValues: values[i] };
-    }
-  }
-  return null;
-}
+// NOTE: findRowByTwoColumns() is intentionally NOT defined in this file.
+// It is owned by Part 4 (Core.gs). Declaring it here would cause a duplicate
+// function declaration crash at Apps Script deployment time.
 
 // ----------------------------------------------------------------------------
 // TEMPORARY STUBS — REMOVE ONCE PART 4 (CORE INFRASTRUCTURE) IS MERGED

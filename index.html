@@ -1,5 +1,3 @@
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -15,7 +13,7 @@
   <title>Milk Admin V17</title>
 
   <link rel="manifest" href="/manifest.json" />
-  <link rel="apple-touch-icon" href="/favicon.svg" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="stylesheet" href="/app.css" />
 
   <style>
@@ -244,6 +242,7 @@ function _setLoading(on) {
 async function _finishLogin(data) {
   if (data.success) {
     saveSession(data.data.token, data.data.sessionSecret);
+    sessionStorage.setItem('milkapp_expires', String(data.data.expiresAt || 0)); // ADD THIS
     _showApp();
     return true;
   }
@@ -310,46 +309,39 @@ async function _submitPIN() {
   }
 }
 
+// ── FIX: React already mounted by main.jsx, just reveal it ──────────────────
 function _showApp() {
   document.getElementById('login-screen').classList.add('hidden');
-  const root = document.getElementById('app-root');
-  root.classList.add('visible');
-  // Mount the React app — MilkAdminApp is exported by your compiled bundle.js
-  // (the production build of the React artifact)
-  if (typeof MilkAdminApp !== 'undefined') {
-    ReactDOM.createRoot(root).render(React.createElement(MilkAdminApp));
-  } else {
-    // Fallback if bundle not yet built — shows a clear message
-    root.innerHTML = '<div style="padding:40px;text-align:center;color:#6b7280;font-family:system-ui">' +
-      '<div style="font-size:32px;margin-bottom:16px">🥛</div>' +
-      '<div style="font-size:15px;font-weight:600;color:#111">Backend connected!</div>' +
-      '<div style="margin-top:8px;font-size:13px">Login succeeded. Run <code>npm run build</code> to ' +
-      'compile the React app, then refresh.</div></div>';
-  }
+  document.getElementById('app-root').classList.add('visible');
 }
 
 // ── Check if already logged in (e.g. page refresh within the same tab) ────────
 window.addEventListener('load', () => {
-  const token = sessionStorage.getItem('milkapp_token');
-  if (token) {
-    // Quick health check to confirm the session is still valid before showing UI
-    fetch('/api', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'healthCheck',
-        token: token,
-        sessionSecret: sessionStorage.getItem('milkapp_secret') || '',
-      }),
-    })
-    .then(r => r.json())
-    .then(data => {
-      if (data.success) _showApp();
-      // If session expired the fetch will return UNAUTHORIZED which clears
-      // the session in apiCall's interceptor, then the login screen stays
-    })
-    .catch(() => { /* network down — show login */ });
+  const token   = sessionStorage.getItem('milkapp_token');
+  const expires = Number(sessionStorage.getItem('milkapp_expires') || 0);
+  // Skip if token missing OR already expired client-side
+  if (!token || (expires && Date.now() > expires)) {
+    sessionStorage.removeItem('milkapp_token');
+    sessionStorage.removeItem('milkapp_secret');
+    sessionStorage.removeItem('milkapp_expires');
+    return;
   }
+  fetch('/api', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'healthCheck',
+      token: token,
+      sessionSecret: sessionStorage.getItem('milkapp_secret') || '',
+    }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) _showApp();
+    // If session expired the fetch will return UNAUTHORIZED which clears
+    // the session in apiCall's interceptor, then the login screen stays
+  })
+  .catch(() => { /* network down — show login */ });
 });
 </script>
 </body>
