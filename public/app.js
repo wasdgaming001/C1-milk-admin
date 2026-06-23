@@ -31,10 +31,13 @@ function getSession() {
   };
 }
 
-function saveSession(token, sessionSecret) {
+// Exposed on window because the pre-React PIN login flow in index.html calls
+// saveSession(...) before this module's bundle would export anything — same
+// cross-file contract as window.apiCall / window.queueWrite below.
+window.saveSession = function saveSession(token, sessionSecret) {
   sessionStorage.setItem('milkapp_token',  token);
   sessionStorage.setItem('milkapp_secret', sessionSecret);
-}
+};
 
 function clearSession() {
   sessionStorage.removeItem('milkapp_token');
@@ -330,7 +333,7 @@ class WriteQueueManager {
 
         let res;
         try { res = await window.apiCall(w.action, w.payload); }
-        catch (err) { res = { success: false, error: { code: 'NETWORK_ERROR' } }; }
+        catch { res = { success: false, error: { code: 'NETWORK_ERROR' } }; }
 
         const shouldMarkDone = res.success || ['DUPLICATE', 'CONFLICT', 'VERSION_CONFLICT'].includes(res.error?.code);
         if (shouldMarkDone) {

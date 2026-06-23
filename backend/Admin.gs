@@ -475,10 +475,13 @@ function setupSheets() {
     }
   });
 
-  // Seed default MilkTypes if the sheet was just created and is empty
+  // Seed default MilkTypes if the sheet was just created and is empty.
+  // Matches the 5 products offered by the frontend (App.jsx MILK_TYPES) and
+  // priced in the frontend RATE_BY_PRODUCT table — seeding only a subset would
+  // make the missing types get rejected by isValidActiveMilkType() on import.
   const typesSheet = ss.getSheetByName(SHEET_NAMES.MILK_TYPES);
   if (typesSheet && typesSheet.getLastRow() < 2) {
-    ['Full Cream', 'Toned', 'Double Toned'].forEach(function (typeName, i) {
+    ['Full Cream', 'Toned', 'Double Toned', 'Skimmed', 'Standardised'].forEach(function (typeName, i) {
       typesSheet.getRange(i + 2, 1, 1, 3).setValues([['TYPE-' + (i + 1), typeName, 'Active']]);
     });
   }

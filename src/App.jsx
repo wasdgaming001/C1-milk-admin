@@ -4,7 +4,6 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 
 const BLUE = "#1e40af";
 const BLUE_L = "#dbeafe";
-const BLUE_M = "#3b82f6";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const fmt = n => {
@@ -1045,8 +1044,6 @@ export default function App() {
     return null;
   };
 
-  const pageMap = { dashboard:renderDashboard, customers:renderCustomers, delivery:renderDelivery, imports:renderImports, billing:renderBilling, more:renderMore };
-
   return (
     <div style={{ fontFamily:"system-ui,sans-serif", maxWidth:420, margin:"0 auto", background:"#f8fafc", minHeight:640, position:"relative", paddingBottom:68 }}>
       {/* Header */}
@@ -1066,8 +1063,22 @@ export default function App() {
         </div>
       </div>
 
-      {/* Page */}
-      <div style={{ padding:"14px 12px" }}>{(pageMap[tab]||renderDashboard)()}</div>
+      {/* Page — switch on tab returns the page element directly (avoids
+          invoking a stored function during render, which react-hooks/refs
+          flags). Falls back to the dashboard for unknown tabs. */}
+      <div style={{ padding:"14px 12px" }}>
+        {(() => {
+          switch (tab) {
+            case 'customers': return renderCustomers();
+            case 'delivery':  return renderDelivery();
+            case 'imports':   return renderImports();
+            case 'billing':   return renderBilling();
+            case 'more':      return renderMore();
+            case 'dashboard':
+            default:          return renderDashboard();
+          }
+        })()}
+      </div>
 
       {/* Bottom Nav */}
       <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:420, background:"#fff", borderTop:"0.5px solid #e5e7eb", display:"flex", zIndex:300 }}>
