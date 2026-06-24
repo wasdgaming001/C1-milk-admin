@@ -1,20 +1,23 @@
-
-
 /* ============================================================================
  * MILK DELIVERY ADMIN — V17
- * FILE 1: sw.js  (Service Worker — place in project root)
+ * FILE 1: sw.js  (Service Worker — place in project root / public/)
  * ============================================================================
  *
  * Cache strategy:
- *   - App shell (HTML/JS/CSS/icons) → Cache-first, updated on activate
- *   - /api calls → Network-only (never cached — always needs fresh data)
- *   - All other requests → Network-first, fall back to cache, then offline page
+ *   /assets/*    → Cache-first  (Vite content-hashed bundles — safe forever)
+ *   Shell files  → Cache-first  (updated when CACHE name is bumped)
+ *   /api calls   → Network-only (never cache — always needs fresh data)
+ *   Everything else → Network-first with cache fallback
  *
- * Cache name must be bumped (milk-v18, milk-v19, …) whenever shell files
- * change so the activate handler evicts the old cache on the next visit.
+ * Fix #10: added /assets/ branch so Vite's hashed JS/CSS bundles are cached
+ * on first load and served offline on subsequent visits. Previously those
+ * bundles fell through to "network-first", which meant the app broke offline.
+ *
+ * Bump CACHE to milk-v18 whenever shell or strategy changes so activate()
+ * evicts the old cache on the next visit.
  * ============================================================================ */
 
-const CACHE = 'milk-v17';
+const CACHE = 'milk-v18'; // bumped: /assets/ strategy added
 const SHELL = [
   '/',
   '/index.html',
@@ -36,7 +39,6 @@ self.addEventListener('install', e => {
         )
       )
     );
-    // Take control immediately without waiting for existing tabs to close
     self.skipWaiting();
   })());
 });
@@ -50,7 +52,6 @@ self.addEventListener('activate', e => {
         .filter(k => k.startsWith('milk-') && k !== CACHE)
         .map(k => caches.delete(k))
     );
-    // Claim all open tabs immediately
     await self.clients.claim();
   })());
 });
@@ -61,7 +62,31 @@ self.addEventListener('fetch', e => {
 
   // API calls: always network, never cache
   if (url.pathname.startsWith('/api') || url.pathname.includes('/.netlify/functions/')) {
-    return; // let the browser handle it natively (no respondWith = pass-through)
+    return; // pass-through — no respondWith()
+  }
+
+  // Fix #10 — Vite assets: cache-first.
+  // Filenames are content-hashed (e.g. /assets/index-Abc123.js) so a given
+  // URL is immutable. Cache on first fetch; serve from cache forever after.
+  // This is what was missing: the app loaded over the network just fine, but
+  // an offline revisit would fail because the JS bundle was never cached.
+  if (url.pathname.startsWith('/assets/')) {
+    e.respondWith((async () => {
+      const cached = await caches.match(e.request);
+      if (cached) return cached;
+      try {
+        const fresh = await fetch(e.request);
+        if (fresh.ok) {
+          const cache = await caches.open(CACHE);
+          cache.put(e.request, fresh.clone());
+        }
+        return fresh;
+      } catch {
+        // Asset not cached yet and network is down — nothing we can serve
+        return new Response('', { status: 503 });
+      }
+    })());
+    return;
   }
 
   // Shell files: cache-first
@@ -75,12 +100,13 @@ self.addEventListener('fetch', e => {
         cache.put(e.request, fresh.clone());
         return fresh;
       } catch {
-        // For navigation requests, return the cached index.html as SPA fallback
         if (e.request.mode === 'navigate') {
-          return caches.match('/index.html') ||
+          return (
+            (await caches.match('/index.html')) ||
             new Response('<h1>Offline</h1><p>Reconnect and refresh.</p>', {
-              status: 503, headers: { 'Content-Type': 'text/html' }
-            });
+              status: 503, headers: { 'Content-Type': 'text/html' },
+            })
+          );
         }
         return new Response('', { status: 503 });
       }
@@ -108,5 +134,3 @@ self.addEventListener('fetch', e => {
 self.addEventListener('message', e => {
   if (e.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
-
-

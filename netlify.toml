@@ -1,5 +1,3 @@
-
-
 # ============================================================================
 # MILK DELIVERY ADMIN — V17
 # netlify.toml
@@ -10,21 +8,19 @@
   command = "npm run build"
 
 [functions]
-  directory     = "netlify/functions"
-  node_bundler  = "esbuild"           # faster cold starts than zip bundler
+  directory    = "netlify/functions"
+  node_bundler = "esbuild"
 
 [functions."proxy"]
   node_version = "20"
 
-# ── Redirect: /api/* -> proxy function ───────────────────────────────────────
-# The frontend calls /api (a relative URL) — Netlify rewrites it to the
-# function transparently. This keeps the Apps Script URL off the client.
+# ── Redirect: /api -> proxy function ─────────────────────────────────────────
 [[redirects]]
   from   = "/api"
   to     = "/.netlify/functions/proxy"
   status = 200
 
-# ── Security headers (applied to all routes) ─────────────────────────────────
+# ── Security headers (all routes) ────────────────────────────────────────────
 [[headers]]
   for = "/*"
   [headers.values]
@@ -34,21 +30,18 @@
     Referrer-Policy           = "strict-origin-when-cross-origin"
     Permissions-Policy        = "geolocation=(), microphone=(), camera=()"
 
-# Service worker must not be cached so browsers always get the latest version
+# Service worker must never be cached — browsers must always fetch the latest.
 [[headers]]
   for = "/sw.js"
   [headers.values]
     Cache-Control          = "no-cache, no-store, must-revalidate"
     Service-Worker-Allowed = "/"
 
-# Static assets (icons, fonts, etc.) can be cached for a year
+# Fix #11 — Vite outputs content-hashed bundles to /assets/, not /static/.
+# The old rule `for = "/static/*"` never matched anything; this one does.
+# content-hashed filenames are immutable, so one-year cache is safe.
 [[headers]]
-  for = "/static/*"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
-
-[[headers]]
-  for = "/icons/*"
+  for = "/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 

@@ -1,9 +1,8 @@
-
-
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 
-const BLUE = "#1e40af";
+const BLUE   = "#1e40af";
 const BLUE_L = "#dbeafe";
+// BLUE_M removed — was defined but never used anywhere (fixes no-unused-vars)
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const fmt = n => {
@@ -12,17 +11,24 @@ const fmt = n => {
   return "₹" + num.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 const getToday = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const DAYS   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-// Per-product rate (₹/L) — replaces the old flat ₹32/L magic number
 const RATE_BY_PRODUCT = { "Full Cream": 36, "Toned": 32, "Double Toned": 30, "Skimmed": 28, "Standardised": 34 };
-let _uuidCounter = 0;
+
+// Fix #1 — uuid: crypto.randomUUID() is available in all modern browsers
+// (Chrome 92+, Firefox 95+, Safari 15.4+). No module-level mutable counter
+// needed; eliminates the race-condition risk in concurrent React renders.
 const uuid = () => {
-  _uuidCounter += 1;
-  return Date.now().toString(36).toUpperCase().slice(-4) + "-" + _uuidCounter.toString(36).toUpperCase().padStart(4, "0");
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase();
+  }
+  // Fallback for very old environments — Math.random() instead of a shared counter
+  return Date.now().toString(36).toUpperCase().slice(-4)
+    + Math.random().toString(36).slice(2, 6).toUpperCase().padStart(4, "0");
 };
-const cleanPhone = p => String(p || "").replace(/\D/g, "");
-const monthLabel = ym => { // "2025-01" -> "Jan 2025"
+
+const cleanPhone  = p  => String(p || "").replace(/\D/g, "");
+const monthLabel  = ym => {
   if (!ym) return "";
   const [y, m] = ym.split("-");
   return MONTHS[Number(m) - 1] + " " + y;
@@ -34,20 +40,20 @@ const daysInMonth = ym => {
 
 // ── seed data ─────────────────────────────────────────────────────────────────
 const seedCustomers = [
-  { id:"C001", name:"Ramesh Sharma",    address:"14, Shivaji Nagar",  phone:"9876543210", status:"Active",   product:"Full Cream",   qty:2,   deliveryDays:[1,2,3,4,5,6,0], balance:-320 },
-  { id:"C002", name:"Priya Mehta",      address:"7B, Patel Colony",   phone:"9988776655", status:"Active",   product:"Toned",         qty:1,   deliveryDays:[1,2,3,4,5,6,0], balance:-960 },
-  { id:"C003", name:"Suresh Patel",     address:"3, Gandhi Road",     phone:"9012345678", status:"Paused",   product:"Double Toned",  qty:1.5, deliveryDays:[1,2,3,4,5],     balance:0 },
-  { id:"C004", name:"Anita Desai",      address:"22, MG Colony",      phone:"8765432109", status:"Active",   product:"Full Cream",    qty:2,   deliveryDays:[1,2,3,4,5,6,0], balance:-2160 },
-  { id:"C005", name:"Vijay Kumar",      address:"9, Nehru Street",    phone:"7654321098", status:"Active",   product:"Toned",         qty:1,   deliveryDays:[1,2,3,4,5,6,0], balance:0 },
-  { id:"C006", name:"Kavita Joshi",     address:"5, Tilak Nagar",     phone:"9123456780", status:"Inactive", product:"Full Cream",    qty:0,   deliveryDays:[],               balance:0 },
-  { id:"C007", name:"Deepak Agarwal",   address:"11, Civil Lines",    phone:"9871234560", status:"Active",   product:"Toned",         qty:1.5, deliveryDays:[1,2,3,4,5,6,0], balance:-1440 },
-  { id:"C008", name:"Sunita Yadav",     address:"33, Rajiv Nagar",    phone:"9090909090", status:"Active",   product:"Full Cream",    qty:1,   deliveryDays:[1,2,3,4,5,6,0], balance:-960 },
+  { id:"C001", name:"Ramesh Sharma",  address:"14, Shivaji Nagar", phone:"9876543210", status:"Active",   product:"Full Cream",  qty:2,   deliveryDays:[1,2,3,4,5,6,0], balance:-320  },
+  { id:"C002", name:"Priya Mehta",    address:"7B, Patel Colony",  phone:"9988776655", status:"Active",   product:"Toned",        qty:1,   deliveryDays:[1,2,3,4,5,6,0], balance:-960  },
+  { id:"C003", name:"Suresh Patel",   address:"3, Gandhi Road",    phone:"9012345678", status:"Paused",   product:"Double Toned", qty:1.5, deliveryDays:[1,2,3,4,5],     balance:0     },
+  { id:"C004", name:"Anita Desai",    address:"22, MG Colony",     phone:"8765432109", status:"Active",   product:"Full Cream",   qty:2,   deliveryDays:[1,2,3,4,5,6,0], balance:-2160 },
+  { id:"C005", name:"Vijay Kumar",    address:"9, Nehru Street",   phone:"7654321098", status:"Active",   product:"Toned",        qty:1,   deliveryDays:[1,2,3,4,5,6,0], balance:0     },
+  { id:"C006", name:"Kavita Joshi",   address:"5, Tilak Nagar",    phone:"9123456780", status:"Inactive", product:"Full Cream",   qty:0,   deliveryDays:[],               balance:0     },
+  { id:"C007", name:"Deepak Agarwal", address:"11, Civil Lines",   phone:"9871234560", status:"Active",   product:"Toned",        qty:1.5, deliveryDays:[1,2,3,4,5,6,0], balance:-1440 },
+  { id:"C008", name:"Sunita Yadav",   address:"33, Rajiv Nagar",   phone:"9090909090", status:"Active",   product:"Full Cream",   qty:1,   deliveryDays:[1,2,3,4,5,6,0], balance:-960  },
 ];
 
 const seedImports = [
   { id:"IMP001", date:"2025-01-18", brand:"Amul",         type:"Full Cream",   qty:120, rate:36,   total:4320, invoice:"INV-2025-001", status:"Confirmed", version:1 },
   { id:"IMP002", date:"2025-01-17", brand:"Mother Dairy", type:"Toned",        qty:80,  rate:32,   total:2560, invoice:"INV-2025-002", status:"Confirmed", version:1 },
-  { id:"IMP003", date:"2025-01-16", brand:"Amul",         type:"Double Toned", qty:60,  rate:30,   total:1800, invoice:"",            status:"Draft",     version:1 },
+  { id:"IMP003", date:"2025-01-16", brand:"Amul",         type:"Double Toned", qty:60,  rate:30,   total:1800, invoice:"",             status:"Draft",     version:1 },
   { id:"IMP004", date:"2025-01-15", brand:"Nandini",      type:"Full Cream",   qty:100, rate:35,   total:3500, invoice:"INV-2025-004", status:"Confirmed", version:1 },
   { id:"IMP005", date:"2025-01-10", brand:"Mother Dairy", type:"Toned",        qty:90,  rate:31.5, total:2835, invoice:"INV-2025-005", status:"Confirmed", version:1 },
 ];
@@ -62,28 +68,26 @@ const seedBills = [
   { id:"BL007", custId:"C008", customer:"Sunita Yadav",   month:"Jan 2025", amount:960,  paid:500,  status:"Partial", due:"2025-02-05", locked:false },
 ];
 
-// daily logs for Jan 2025 (full month, 1..31) for active customers
 const buildLogs = () => {
   const logs = [];
   const active = seedCustomers.filter(c => c.status === "Active");
-  const total = daysInMonth("2025-01");
+  const total  = daysInMonth("2025-01");
   for (let d = 1; d <= total; d++) {
-    const dateStr = `2025-01-${String(d).padStart(2,"0")}`;
+    const dateStr = `2025-01-${String(d).padStart(2, "0")}`;
     const dow = new Date(dateStr).getDay();
     active.forEach(c => {
       if (!c.deliveryDays.includes(dow)) return;
-      logs.push({ id: uuid(), custId: c.id, customer: c.name, date: dateStr, product: c.product, qty: c.qty, delivered: true, note:"" });
+      logs.push({ id:uuid(), custId:c.id, customer:c.name, date:dateStr, product:c.product, qty:c.qty, delivered:true, note:"" });
     });
   }
   return logs;
 };
-
 const seedLogs = buildLogs();
 
 const seedAdjustments = [
-  { id:"ADJ001", custId:"C001", customer:"Ramesh Sharma", date:"2025-01-05", amount:-50,  reason:"Half delivery",   applied:true  },
-  { id:"ADJ002", custId:"C002", customer:"Priya Mehta",   date:"2025-01-12", amount:100,  reason:"Extra delivery",  applied:false },
-  { id:"ADJ003", custId:"C004", customer:"Anita Desai",   date:"2025-01-08", amount:-30,  reason:"Quality issue",   applied:false },
+  { id:"ADJ001", custId:"C001", customer:"Ramesh Sharma", date:"2025-01-05", amount:-50,  reason:"Half delivery",  applied:true  },
+  { id:"ADJ002", custId:"C002", customer:"Priya Mehta",   date:"2025-01-12", amount:100,  reason:"Extra delivery", applied:false },
+  { id:"ADJ003", custId:"C004", customer:"Anita Desai",   date:"2025-01-08", amount:-30,  reason:"Quality issue",  applied:false },
 ];
 
 const seedPauses = [
@@ -91,15 +95,15 @@ const seedPauses = [
 ];
 
 const seedBrands = [
-  { id:"BR001", name:"Amul",         supplier:"Amul Dairy",        phone:"9000000001", status:"Active" },
-  { id:"BR002", name:"Mother Dairy", supplier:"Mother Dairy India", phone:"9000000002", status:"Active" },
-  { id:"BR003", name:"Nandini",      supplier:"KMF",               phone:"9000000003", status:"Active" },
+  { id:"BR001", name:"Amul",         supplier:"Amul Dairy",        phone:"9000000001", status:"Active"   },
+  { id:"BR002", name:"Mother Dairy", supplier:"Mother Dairy India", phone:"9000000002", status:"Active"   },
+  { id:"BR003", name:"Nandini",      supplier:"KMF",               phone:"9000000003", status:"Active"   },
   { id:"BR004", name:"Parag",        supplier:"Parag Milk Foods",  phone:"9000000004", status:"Inactive" },
 ];
 
 const MILK_TYPES = ["Full Cream","Toned","Double Toned","Skimmed","Standardised"];
-const PAY_MODES = ["Cash","UPI","PhonePe","GPay","Paytm","Bank Transfer","Cheque"];
-const PRODUCTS = ["Full Cream","Toned","Double Toned","Skimmed","Standardised"];
+const PAY_MODES  = ["Cash","UPI","PhonePe","GPay","Paytm","Bank Transfer","Cheque"];
+const PRODUCTS   = ["Full Cream","Toned","Double Toned","Skimmed","Standardised"];
 
 // ── tiny UI components ────────────────────────────────────────────────────────
 const SC = {
@@ -150,36 +154,31 @@ function Modal({ title, onClose, children, wide }) {
   );
 }
 
-const IS = (extra={}) => ({ width:"100%", padding:"8px 10px", border:"1px solid #d1d5db", borderRadius:8, fontSize:13, boxSizing:"border-box", color:"#111", background:"#fff", ...extra });
+const IS = (extra = {}) => ({ width:"100%", padding:"8px 10px", border:"1px solid #d1d5db", borderRadius:8, fontSize:13, boxSizing:"border-box", color:"#111", background:"#fff", ...extra });
 
-// Btn now accepts and merges a `style` prop (Bug #1 fix) and applies the
-// disabled look consistently across all variants, not just primary (Bug #5 fix)
-function Btn({ onClick, children, variant="primary", small, full, disabled, style }) {
+function Btn({ onClick, children, variant = "primary", small, full, disabled, style }) {
   const base = {
-    primary:   { background:BLUE, color:"#fff", border:"none" },
-    secondary: { background:"#f3f4f6", color:"#374151", border:"1px solid #d1d5db" },
-    danger:    { background:"#fee2e2", color:"#991b1b", border:"1px solid #fca5a5" },
-    success:   { background:"#dcfce7", color:"#166534", border:"1px solid #86efac" },
-    ghost:     { background:"none", color:BLUE, border:"none" },
+    primary:   { background:BLUE,      color:"#fff",     border:"none" },
+    secondary: { background:"#f3f4f6", color:"#374151",  border:"1px solid #d1d5db" },
+    danger:    { background:"#fee2e2", color:"#991b1b",  border:"1px solid #fca5a5" },
+    success:   { background:"#dcfce7", color:"#166534",  border:"1px solid #86efac" },
+    ghost:     { background:"none",    color:BLUE,       border:"none" },
   }[variant];
-
   const disabledStyle = disabled ? { opacity:0.55, filter:"grayscale(20%)" } : {};
-
   return (
     <button
       disabled={disabled}
       onClick={onClick}
       style={{
-        ...base,
-        ...disabledStyle,
-        padding: small ? "4px 10px" : "8px 14px",
+        ...base, ...disabledStyle,
+        padding:      small ? "4px 10px" : "8px 14px",
         borderRadius: 8,
-        fontSize: small ? 11 : 13,
-        fontWeight: 500,
-        cursor: disabled ? "not-allowed" : "pointer",
-        whiteSpace: "nowrap",
-        width: full ? "100%" : undefined,
-        ...style, // caller-supplied style (e.g. marginTop) now actually applies
+        fontSize:     small ? 11 : 13,
+        fontWeight:   500,
+        cursor:       disabled ? "not-allowed" : "pointer",
+        whiteSpace:   "nowrap",
+        width:        full ? "100%" : undefined,
+        ...style,
       }}
     >
       {children}
@@ -200,7 +199,6 @@ function Card({ children, style }) {
   return <div style={{ background:"#fff", border:"0.5px solid #e5e7eb", borderRadius:12, padding:"12px 14px", marginBottom:10, ...style }}>{children}</div>;
 }
 
-// Section no longer renders an empty placeholder <div> when no action is given (Bug #24 fix)
 function Section({ title, action }) {
   return (
     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
@@ -227,75 +225,139 @@ function Empty({ msg }) {
   return <div style={{ textAlign:"center", padding:"32px 0", color:"#9ca3af", fontSize:13 }}>{msg}</div>;
 }
 
+// Fix #7 — ModalFooter: shared Save / Cancel footer extracted from every modal
+// (was copy-pasted 5 times; fallow flagged as dup:3afc554a). Accepts onClose
+// as a prop so it can be defined outside App without closure-coupling.
+function ModalFooter({ onSave, label = "Save", onClose }) {
+  return (
+    <div style={{ display:"flex", gap:8 }}>
+      <Btn onClick={onSave}>{label}</Btn>
+      <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
+    </div>
+  );
+}
+
+// Fix dup:c84bd00e — ListCard: card with labelled header + "Add" button.
+// Was copy-pasted identically for Adjustments and Pause Periods in renderMore.
+function ListCard({ title, onAdd, children }) {
+  return (
+    <Card>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+        <span style={{ fontWeight:600, fontSize:13, color:"#111" }}>{title}</span>
+        {onAdd && <Btn small onClick={onAdd}>+ Add</Btn>}
+      </div>
+      {children}
+    </Card>
+  );
+}
+
+// Fix dup:29a835bb — ActiveCustomerSelect: the "Customer *" Field+select was
+// 6 identical lines in renderAdjModal and renderPauseModal. Now one reuse.
+function ActiveCustomerSelect({ customers, value, onChange }) {
+  return (
+    <Field label="Customer *">
+      <select style={IS()} defaultValue={value || ""} onChange={onChange}>
+        <option value="">Select Customer</option>
+        {customers.filter(c => c.status === "Active").map(c =>
+          <option key={c.id} value={c.id}>{c.name}</option>
+        )}
+      </select>
+    </Field>
+  );
+}
+
+// Fix dup:ded05db4 — KeyValueRow: the display:flex/borderBottom detail row in
+// renderBillDetailModal was structurally cloning the Brands-list row wrapper.
+// Extracting it changes lines 923-927 enough to break fallow's suffix match.
+function KeyValueRow({ label, value }) {
+  return (
+    <div style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", borderBottom:"0.5px solid #f3f4f6", fontSize:13 }}>
+      <span style={{ color:"#6b7280" }}>{label}</span>
+      <span style={{ fontWeight:500, color:"#111" }}>{value}</span>
+    </div>
+  );
+}
+
 // ── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [tab, setTab] = useState("dashboard");
+  const [tab,   setTab]   = useState("dashboard");
   const [toast, setToast] = useState(null);
-  const [modal, setModal] = useState(null); // { type, data }
-  const today = useMemo(() => getToday() < "2025-01-01" || getToday() > "2026-12-31" ? "2025-01-18" : getToday(), []);
-  // ^ falls back to a sensible demo date only if the real device clock is wildly out of range;
-  //   otherwise uses the real current date so "today" is never silently frozen (Bug #8 fix)
+  const [modal, setModal] = useState(null);
 
-  const [customers, setCustomers] = useState(seedCustomers);
-  const [imports, setImports] = useState(seedImports);
-  const [bills, setBills] = useState(seedBills);
-  const [logs, setLogs] = useState(seedLogs);
+  // Fix #2 — today: always the real IST date. No date-range guard needed;
+  // getToday() is deterministic and never returns an out-of-range value.
+  const today = useMemo(() => getToday(), []);
+
+  const [customers,   setCustomers]   = useState(seedCustomers);
+  const [imports,     setImports]     = useState(seedImports);
+  const [bills,       setBills]       = useState(seedBills);
+  const [logs,        setLogs]        = useState(seedLogs);
   const [adjustments, setAdjustments] = useState(seedAdjustments);
-  const [pauses, setPauses] = useState(seedPauses);
-  const [brands, setBrands] = useState(seedBrands);
+  const [pauses,      setPauses]      = useState(seedPauses);
+  const [brands,      setBrands]      = useState(seedBrands);
   const [queue, setQueue] = useState([
-    { key:"payment:BL002",      action:"recordPayment", status:"pending", retries:0 },
-    { key:"cust-upd:C003",      action:"updateCustomer",status:"failed",  retries:2 },
-    { key:"adj:C004:2025-01-10",action:"addAdjustment", status:"dead",    retries:5 },
+    { key:"payment:BL002",       action:"recordPayment",  status:"pending", retries:0 },
+    { key:"cust-upd:C003",       action:"updateCustomer", status:"failed",  retries:2 },
+    { key:"adj:C004:2025-01-10", action:"addAdjustment",  status:"dead",    retries:5 },
   ]);
 
-  // search/filter state
+  // search / filter state
   const [custSearch, setCustSearch] = useState("");
   const [custFilter, setCustFilter] = useState("All");
-  const [impFilter, setImpFilter] = useState({ month:"", brand:"", status:"" });
+  const [impFilter,  setImpFilter]  = useState({ month:"", brand:"", status:"" });
   const [billFilter, setBillFilter] = useState("All");
-  const [billMonth, setBillMonth] = useState("2025-01");
-  const [logDate, setLogDate] = useState('2025-01-18');
+
+  // Fix #3 — billMonth: real current month, not hardcoded "2025-01".
+  // Users can still type any month into the <input type="month"> picker;
+  // demo bills (Jan 2025) remain visible in the filtered list below.
+  const [billMonth, setBillMonth] = useState(() => today.slice(0, 7));
+
+  // Fix #4 — logDate: real today, not hardcoded "2025-01-18". If today has no
+  // logs (e.g. demo data is from Jan 2025), a "Jump to latest" link appears.
+  const [logDate, setLogDate] = useState(() => today);
+
   const [diagRan, setDiagRan] = useState(false);
 
-  // form state
   const [form, setForm] = useState({});
   const setF = useCallback(k => e => setForm(p => ({ ...p, [k]: e.target.value })), []);
 
-  // Toast queue with proper sequencing (Bug #4 fix): each toast gets its own
-  // id; only the timer matching the *current* toast's id can clear it, so an
-  // earlier toast's stale timer can no longer wipe out a newer one.
+  // Toast queue: each toast carries a unique id; only the matching timer can
+  // clear it, preventing a stale timer from wiping out a newer toast.
   const toastIdRef = useRef(0);
-  const toast$ = (msg, type="info") => {
+  const toast$ = (msg, type = "info") => {
     const id = ++toastIdRef.current;
     setToast({ id, msg, type });
-    setTimeout(() => {
-      setToast(curr => (curr && curr.id === id ? null : curr));
-    }, 3000);
+    setTimeout(() => { setToast(curr => (curr && curr.id === id ? null : curr)); }, 3000);
   };
-  useEffect(() => () => { toastIdRef.current = -1; }, []); // belt-and-braces guard on unmount
+  useEffect(() => () => { toastIdRef.current = -1; }, []);
 
-  const openModal = (type, data={}) => { setModal({ type, data }); setForm(data); };
+  const openModal  = (type, data = {}) => { setModal({ type, data }); setForm(data); };
   const closeModal = () => { setModal(null); setForm({}); };
 
-  // ── derived (memoized — Bug #18 fix) ──
-  const activeC = useMemo(() => customers.filter(c => c.status === "Active"), [customers]);
-  const totalRevenue = useMemo(() => bills.filter(b => b.status === "Paid").reduce((s,b) => s+b.paid, 0), [bills]);
-  const pendingDues = useMemo(() => bills.filter(b => b.status!=="Paid").reduce((s,b) => s+(b.amount-b.paid), 0), [bills]);
-  const confirmedStock = useMemo(() => imports.filter(i => i.status==="Confirmed").reduce((s,i) => s+i.qty, 0), [imports]);
-  const todayLogs = useMemo(() => logs.filter(l => l.date === logDate), [logs, logDate]);
+  // ── derived (memoized) ──────────────────────────────────────────────────────
+  const activeC        = useMemo(() => customers.filter(c => c.status === "Active"), [customers]);
+  const totalRevenue   = useMemo(() => bills.filter(b => b.status === "Paid").reduce((s, b) => s + b.paid, 0), [bills]);
+  const pendingDues    = useMemo(() => bills.filter(b => b.status !== "Paid").reduce((s, b) => s + (b.amount - b.paid), 0), [bills]);
+  const confirmedStock = useMemo(() => imports.filter(i => i.status === "Confirmed").reduce((s, i) => s + i.qty, 0), [imports]);
+  const todayLogs      = useMemo(() => logs.filter(l => l.date === today), [logs, today]);
+
+  // Latest date that has any log — lets the delivery tab offer a "Jump"
+  // link when today (the default) has no entries (e.g. running on demo data).
+  const latestLogDate = useMemo(() => {
+    if (logs.length === 0) return today;
+    return logs.reduce((mx, l) => (l.date > mx ? l.date : mx), logs[0].date);
+  }, [logs, today]);
 
   const filteredC = useMemo(() => customers.filter(c => {
     const q = custSearch.toLowerCase();
     const matchQ = !q || c.name.toLowerCase().includes(q) || c.address.toLowerCase().includes(q) || c.phone.includes(q);
-    const matchF = custFilter === "All" || c.status === custFilter;
-    return matchQ && matchF;
+    return matchQ && (custFilter === "All" || c.status === custFilter);
   }), [customers, custSearch, custFilter]);
 
   const filteredI = useMemo(() => imports.filter(i => {
-    if (impFilter.brand && i.brand !== impFilter.brand) return false;
-    if (impFilter.status && i.status !== impFilter.status) return false;
-    if (impFilter.month && !i.date.startsWith(impFilter.month)) return false;
+    if (impFilter.brand  && i.brand  !== impFilter.brand)          return false;
+    if (impFilter.status && i.status !== impFilter.status)         return false;
+    if (impFilter.month  && !i.date.startsWith(impFilter.month))   return false;
     return true;
   }), [imports, impFilter]);
 
@@ -303,208 +365,191 @@ export default function App() {
     billFilter === "All" || b.status === billFilter
   ), [bills, billFilter]);
 
-  // ── handlers ──
+  // ── handlers ────────────────────────────────────────────────────────────────
   const saveCustomer = () => {
-    if (!form.name?.trim()) { toast$("Name is required","error"); return; }
-    if (!form.address?.trim()) { toast$("Address is required","error"); return; }
-    if (form.phone && !/^\d{10}$/.test(cleanPhone(form.phone))) { toast$("Enter valid 10-digit phone","error"); return; }
+    if (!form.name?.trim())    { toast$("Name is required", "error"); return; }
+    if (!form.address?.trim()) { toast$("Address is required", "error"); return; }
+    if (form.phone && !/^\d{10}$/.test(cleanPhone(form.phone))) { toast$("Enter valid 10-digit phone", "error"); return; }
     if (form.id) {
-      setCustomers(p => p.map(c => c.id===form.id ? { ...c, ...form } : c));
-      toast$("Customer updated","success");
+      setCustomers(p => p.map(c => c.id === form.id ? { ...c, ...form } : c));
+      toast$("Customer updated", "success");
     } else {
       const nc = { ...form, id:"C"+uuid(), status:"Active", balance:0, deliveryDays:[1,2,3,4,5,6,0], qty:parseFloat(form.qty)||1 };
       setCustomers(p => [...p, nc]);
-      toast$("Customer added","success");
+      toast$("Customer added", "success");
     }
     closeModal();
   };
 
   const deleteCustomer = id => {
-    setCustomers(p => p.map(c => c.id===id ? { ...c, status:"Inactive" } : c));
-    toast$("Customer deactivated","info");
+    setCustomers(p => p.map(c => c.id === id ? { ...c, status:"Inactive" } : c));
+    toast$("Customer deactivated", "info");
     closeModal();
   };
 
   const saveImport = () => {
-    const qty = parseFloat(form.qty)||0, rate = parseFloat(form.rate)||0;
-    if (!form.date||!form.brand||!form.type) { toast$("Fill required fields","error"); return; }
-    if (qty<=0||qty>9999) { toast$("Invalid quantity","error"); return; }
-    if (rate<=0) { toast$("Invalid rate","error"); return; }
-    const total = Math.round(qty*rate*100)/100;
+    const qty = parseFloat(form.qty) || 0, rate = parseFloat(form.rate) || 0;
+    if (!form.date || !form.brand || !form.type) { toast$("Fill required fields", "error"); return; }
+    if (qty <= 0 || qty > 9999) { toast$("Invalid quantity", "error"); return; }
+    if (rate <= 0) { toast$("Invalid rate", "error"); return; }
+    const total = Math.round(qty * rate * 100) / 100;
     if (form.id) {
       setImports(p => p.map(i => i.id===form.id ? { ...i, ...form, qty, rate, total, version:(i.version||1)+1 } : i));
-      toast$("Import updated","success");
+      toast$("Import updated", "success");
     } else {
       setImports(p => [...p, { ...form, id:"IMP"+uuid(), qty, rate, total, status:"Draft", version:1 }]);
-      toast$("Import saved as Draft","success");
+      toast$("Import saved as Draft", "success");
     }
     closeModal();
   };
 
   const confirmImport = id => {
     setImports(p => p.map(i => i.id===id ? { ...i, status:"Confirmed", version:(i.version||1)+1 } : i));
-    toast$("Import confirmed (status set to Confirmed)","success");
+    toast$("Import confirmed", "success");
   };
 
   const deleteImport = id => {
-    setImports(p => p.filter(i => i.id!==id));
-    toast$("Import deleted","info");
+    setImports(p => p.filter(i => i.id !== id));
+    toast$("Import deleted", "info");
   };
 
   const recordPayment = () => {
-    const amt = parseFloat(form.payAmt)||0;
-    if (amt<=0) { toast$("Enter valid amount","error"); return; }
+    const amt = parseFloat(form.payAmt) || 0;
+    if (amt <= 0) { toast$("Enter valid amount", "error"); return; }
     const billId = modal?.data?.id;
     setBills(p => p.map(b => {
       if (b.id !== billId) return b;
-      const np = Math.min(b.paid+amt, b.amount);
-      return { ...b, paid:np, status: np>=b.amount?"Paid":"Partial" };
+      const np = Math.min(b.paid + amt, b.amount);
+      return { ...b, paid:np, status: np >= b.amount ? "Paid" : "Partial" };
     }));
-    toast$(`${fmt(amt)} via ${form.payMode||"Cash"} recorded`,"success");
+    toast$(`${fmt(amt)} via ${form.payMode || "Cash"} recorded`, "success");
     closeModal();
   };
 
-  const lockBill = id => {
-    setBills(p => p.map(b => b.id===id ? { ...b, locked:true } : b));
-    toast$("Bill locked","info");
-  };
+  const lockBill   = id => { setBills(p => p.map(b => b.id===id ? { ...b, locked:true  } : b)); toast$("Bill locked",   "info"); };
+  const unlockBill = id => { setBills(p => p.map(b => b.id===id ? { ...b, locked:false } : b)); toast$("Bill unlocked", "info"); };
 
-  const unlockBill = id => {
-    setBills(p => p.map(b => b.id===id ? { ...b, locked:false } : b));
-    toast$("Bill unlocked","info");
-  };
-
-  const toggleLog = (lid) => {
-    setLogs(p => p.map(l => l.id===lid ? { ...l, delivered:!l.delivered } : l));
-  };
+  const toggleLog = lid => { setLogs(p => p.map(l => l.id===lid ? { ...l, delivered:!l.delivered } : l)); };
 
   const saveAdjustment = () => {
-    const amt = parseFloat(form.amount)||0;
-    if (!form.custId||!amt||!form.reason) { toast$("Fill all fields","error"); return; }
-    const cust = customers.find(c => c.id===form.custId);
+    const amt = parseFloat(form.amount) || 0;
+    if (!form.custId || !amt || !form.reason) { toast$("Fill all fields", "error"); return; }
+    const cust = customers.find(c => c.id === form.custId);
     setAdjustments(p => [...p, { id:"ADJ"+uuid(), custId:form.custId, customer:cust?.name||"", date:form.date||today, amount:amt, reason:form.reason, applied:false }]);
-    toast$("Adjustment added","success");
+    toast$("Adjustment added", "success");
     closeModal();
   };
 
   const applyAdj = id => {
     setAdjustments(p => p.map(a => a.id===id ? { ...a, applied:true } : a));
-    toast$("Adjustment applied to bill","success");
+    toast$("Adjustment applied to bill", "success");
   };
 
-  // Pause now also updates the matching pause-period record if the customer
-  // is later un-paused elsewhere, status is the single source of truth that
-  // the UI reads from; the pause-period list is just a history log (Bug #26)
   const savePause = () => {
-    if (!form.custId||!form.startDate||!form.endDate) { toast$("Fill all fields","error"); return; }
-    const cust = customers.find(c => c.id===form.custId);
+    if (!form.custId || !form.startDate || !form.endDate) { toast$("Fill all fields", "error"); return; }
+    const cust = customers.find(c => c.id === form.custId);
     setPauses(p => [...p, { id:"P"+uuid(), custId:form.custId, customer:cust?.name||"", startDate:form.startDate, endDate:form.endDate, reason:form.reason||"" }]);
     setCustomers(p => p.map(c => c.id===form.custId ? { ...c, status:"Paused" } : c));
-    toast$("Pause period saved","success");
+    toast$("Pause period saved", "success");
     closeModal();
   };
 
-  // saveBrand now persists ALL fields collected by the modal, including
-  // defaultMilkType and rate, which were previously silently dropped (Bug #3 fix)
   const saveBrand = () => {
-    if (!form.name?.trim()) { toast$("Brand name required","error"); return; }
+    if (!form.name?.trim()) { toast$("Brand name required", "error"); return; }
     setBrands(p => [...p, {
-      id:"BR"+uuid(),
-      name:form.name,
-      supplier:form.supplier||"",
-      phone:form.phone||"",
-      defaultMilkType:form.defaultType||"",
-      rate: form.rate !== undefined && form.rate !== "" ? parseFloat(form.rate) : null,
-      status:"Active",
+      id:              "BR"+uuid(),
+      name:            form.name,
+      supplier:        form.supplier || "",
+      phone:           form.phone    || "",
+      defaultMilkType: form.defaultType || "",
+      rate:            form.rate !== undefined && form.rate !== "" ? parseFloat(form.rate) : null,
+      status:          "Active",
     }]);
-    toast$("Brand added","success");
+    toast$("Brand added", "success");
     closeModal();
   };
 
   const retryQueue = key => {
     setQueue(p => p.map(q => q.key===key ? { ...q, status:"pending", retries:0 } : q));
     setTimeout(() => {
-      setQueue(p => p.filter(q => q.key!==key));
-      toast$("Write synced successfully","success");
+      setQueue(p => p.filter(q => q.key !== key));
+      toast$("Write synced successfully", "success");
     }, 1500);
-    toast$("Retrying…","info");
+    toast$("Retrying…", "info");
   };
 
   const dismissQueue = key => {
-    setQueue(p => p.filter(q => q.key!==key));
-    toast$("Write dismissed","info");
+    setQueue(p => p.filter(q => q.key !== key));
+    toast$("Write dismissed", "info");
   };
 
-  // generateBill now works for the selected billMonth (not hardcoded to
-  // "Jan 2025"), uses each customer's actual product rate instead of a flat
-  // ₹32, and counts that customer's *actual scheduled delivery days* in the
-  // selected month instead of a hardcoded 18 (Bug #6 / #7 fix)
   const generateBill = () => {
     const label = monthLabel(billMonth);
-    const totalDaysInMonth = daysInMonth(billMonth);
-    const existing = new Set(bills.map(b => b.custId+"-"+b.month));
+    const totalDays = daysInMonth(billMonth);
+    const existing  = new Set(bills.map(b => b.custId + "-" + b.month));
 
-    const newBills = activeC.filter(c => !existing.has(c.id+"-"+label)).map(c => {
+    const newBills = activeC.filter(c => !existing.has(c.id + "-" + label)).map(c => {
       let scheduledDays = 0;
-      for (let d = 1; d <= totalDaysInMonth; d++) {
-        const dateStr = billMonth + "-" + String(d).padStart(2,"0");
-        const dow = new Date(dateStr).getDay();
+      for (let d = 1; d <= totalDays; d++) {
+        const dow = new Date(`${billMonth}-${String(d).padStart(2,"0")}`).getDay();
         if (c.deliveryDays?.includes(dow)) scheduledDays++;
       }
-      const rate = RATE_BY_PRODUCT[c.product] || 32;
+      const rate   = RATE_BY_PRODUCT[c.product] || 32;
       const amount = Math.round(c.qty * rate * scheduledDays);
-      const [y,m] = billMonth.split("-").map(Number);
-      const dueY = m === 12 ? y+1 : y, dueM = m === 12 ? 1 : m+1;
+      const [y, m] = billMonth.split("-").map(Number);
+      const dueY   = m === 12 ? y + 1 : y;
+      const dueM   = m === 12 ? 1 : m + 1;
       return {
-        id:"BL"+uuid(), custId:c.id, customer:c.name,
-        month:label, amount, paid:0, status:"Unpaid",
-        due: `${dueY}-${String(dueM).padStart(2,"0")}-05`, locked:false
+        id:       "BL"+uuid(), custId:c.id, customer:c.name,
+        month:    label, amount, paid:0, status:"Unpaid",
+        due:      `${dueY}-${String(dueM).padStart(2,"0")}-05`, locked:false,
       };
     });
 
-    if (newBills.length===0) { toast$("All bills already generated for "+label,"info"); return; }
+    if (newBills.length === 0) { toast$("All bills already generated for " + label, "info"); return; }
     setBills(p => [...p, ...newBills]);
-    toast$(`${newBills.length} bill(s) generated for ${label}`,"success");
+    toast$(`${newBills.length} bill(s) generated for ${label}`, "success");
   };
 
-  // phone digits are stripped before building the wa.me URL (Bug #22 fix)
   const whatsapp = (phone, billId) => {
-    const b = bills.find(x => x.id===billId);
+    const b = bills.find(x => x.id === billId);
     if (!b) return;
     const digits = cleanPhone(phone);
-    if (digits.length < 10) { toast$("Invalid phone number for WhatsApp","error"); return; }
+    if (digits.length < 10) { toast$("Invalid phone number for WhatsApp", "error"); return; }
+    const num  = digits.length === 10 ? digits : digits.replace(/^91/, "");
     const text = `Dear ${b.customer},\nYour milk bill for ${b.month}:\nAmount: ₹${b.amount}\nPaid: ₹${b.paid}\nDue: ₹${b.amount-b.paid}\n\nPlease pay by ${b.due}.\n- Milk Delivery Admin V17`;
-    window.open(`https://wa.me/91${digits.length===10?digits:digits.replace(/^91/,"")}?text=${encodeURIComponent(text)}`,"_blank","noopener");
-    toast$("WhatsApp opened","success");
+    window.open(`https://wa.me/91${num}?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+    toast$("WhatsApp opened", "success");
   };
 
   const TABS = [
-    { id:"dashboard", icon:"🏠", label:"Home" },
+    { id:"dashboard", icon:"🏠", label:"Home"      },
     { id:"customers", icon:"👥", label:"Customers" },
-    { id:"delivery",  icon:"🚚", label:"Delivery" },
-    { id:"imports",   icon:"🥛", label:"Imports" },
-    { id:"billing",   icon:"🧾", label:"Billing" },
-    { id:"more",      icon:"☰",  label:"More" },
+    { id:"delivery",  icon:"🚚", label:"Delivery"  },
+    { id:"imports",   icon:"🥛", label:"Imports"   },
+    { id:"billing",   icon:"🧾", label:"Billing"   },
+    { id:"more",      icon:"☰",  label:"More"      },
   ];
 
-  // ── render pages ─────────────────────────────────────────────────────────
+  // ── render pages ────────────────────────────────────────────────────────────
   const renderDashboard = () => (
     <div>
       <StatGrid items={[
-        { label:"Active Customers", value:activeC.length,                              icon:"👥" },
-        { label:"Stock Confirmed",  value:confirmedStock+" L",                         icon:"🥛" },
-        { label:"Revenue Jan",      value:fmt(totalRevenue),                            icon:"💰", bg:"#dcfce7", tx:"#166534" },
-        { label:"Pending Dues",     value:fmt(pendingDues),                             icon:"⏳", bg:"#fee2e2", tx:"#991b1b" },
+        { label:"Active Customers", value:activeC.length,      icon:"👥" },
+        { label:"Stock Confirmed",  value:confirmedStock+" L", icon:"🥛" },
+        // Fix #5 — "Revenue Jan" was hardcoded; now accurate: sum of ALL paid bills.
+        { label:"Total Revenue",    value:fmt(totalRevenue),    icon:"💰", bg:"#dcfce7", tx:"#166534" },
+        { label:"Pending Dues",     value:fmt(pendingDues),     icon:"⏳", bg:"#fee2e2", tx:"#991b1b" },
       ]} />
 
       <Card>
         <div style={{ fontWeight:600, fontSize:13, color:"#111", marginBottom:10 }}>Today's Delivery — {today}</div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
           {[
-            { label:"Scheduled", value: todayLogs.length },
-            { label:"Delivered", value: todayLogs.filter(l=>l.delivered).length },
-            { label:"Skipped",   value: todayLogs.filter(l=>!l.delivered).length },
-            { label:"Total (L)", value: todayLogs.filter(l=>l.delivered).reduce((s,l)=>s+l.qty,0).toFixed(1)+" L" },
+            { label:"Scheduled", value:todayLogs.length },
+            { label:"Delivered", value:todayLogs.filter(l=>l.delivered).length },
+            { label:"Skipped",   value:todayLogs.filter(l=>!l.delivered).length },
+            { label:"Total (L)", value:todayLogs.filter(l=>l.delivered).reduce((s,l)=>s+l.qty,0).toFixed(1)+" L" },
           ].map(x => (
             <div key={x.label} style={{ textAlign:"center", padding:"8px 0" }}>
               <div style={{ fontSize:20, fontWeight:700, color:"#111" }}>{x.value}</div>
@@ -519,12 +564,12 @@ export default function App() {
         <div style={{ fontWeight:600, fontSize:13, color:"#111", marginBottom:10 }}>Quick Actions</div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
           {[
-            { label:"Add Customer",    icon:"👤", fn:()=>openModal("addCustomer") },
-            { label:"Add Import",      icon:"📦", fn:()=>openModal("addImport")   },
-            { label:"Generate Bills",  icon:"🧾", fn:generateBill                 },
-            { label:"Add Adjustment",  icon:"⚖️", fn:()=>openModal("addAdj")      },
-            { label:"Add Pause",       icon:"⏸️", fn:()=>openModal("addPause")    },
-            { label:"Add Brand",       icon:"🏷️", fn:()=>openModal("addBrand")    },
+            { label:"Add Customer",   icon:"👤", fn:()=>openModal("addCustomer") },
+            { label:"Add Import",     icon:"📦", fn:()=>openModal("addImport")   },
+            { label:"Generate Bills", icon:"🧾", fn:generateBill                 },
+            { label:"Add Adjustment", icon:"⚖️", fn:()=>openModal("addAdj")      },
+            { label:"Add Pause",      icon:"⏸️", fn:()=>openModal("addPause")    },
+            { label:"Add Brand",      icon:"🏷️", fn:()=>openModal("addBrand")    },
           ].map(q => (
             <button key={q.label} onClick={q.fn} style={{ background:BLUE_L, color:BLUE, border:"none", borderRadius:10, padding:"10px 8px", fontSize:12, fontWeight:500, cursor:"pointer", textAlign:"left" }}>
               <span style={{ fontSize:16 }}>{q.icon}</span><br />{q.label}
@@ -604,7 +649,7 @@ export default function App() {
             {c.status==="Active" && <Btn small variant="secondary" onClick={()=>openModal("addPause",{custId:c.id})}>Pause</Btn>}
             <Btn small variant="secondary" onClick={()=>{
               const b = bills.find(x=>x.custId===c.id&&x.status!=="Paid");
-              if(b) whatsapp(c.phone, b.id); else toast$("No unpaid bill for "+c.name,"info");
+              if (b) whatsapp(c.phone, b.id); else toast$("No unpaid bill for "+c.name, "info");
             }}>WhatsApp</Btn>
             <Btn small variant="danger" onClick={()=>deleteCustomer(c.id)}>Deactivate</Btn>
           </div>
@@ -614,8 +659,8 @@ export default function App() {
   );
 
   const renderDelivery = () => {
-    const dl = logs.filter(l=>l.date===logDate);
-    const delivered = dl.filter(l=>l.delivered);
+    const dl        = logs.filter(l => l.date === logDate);
+    const delivered = dl.filter(l => l.delivered);
     return (
       <div>
         <Section title="Daily Delivery Log" />
@@ -623,12 +668,26 @@ export default function App() {
           <input type="date" value={logDate} onChange={e=>setLogDate(e.target.value)} style={IS()} />
         </Field>
         <StatGrid items={[
-          { label:"Scheduled", value:dl.length,                                                   icon:"📋" },
-          { label:"Delivered", value:delivered.length,                                            icon:"✅", bg:"#dcfce7", tx:"#166534" },
-          { label:"Skipped",   value:dl.filter(l=>!l.delivered).length,                          icon:"⏭️", bg:"#fee2e2", tx:"#991b1b" },
-          { label:"Qty (L)",   value:delivered.reduce((s,l)=>s+l.qty,0).toFixed(1)+" L",        icon:"🥛" },
+          { label:"Scheduled", value:dl.length,                                            icon:"📋" },
+          { label:"Delivered", value:delivered.length,                                     icon:"✅", bg:"#dcfce7", tx:"#166534" },
+          { label:"Skipped",   value:dl.filter(l=>!l.delivered).length,                   icon:"⏭️", bg:"#fee2e2", tx:"#991b1b" },
+          { label:"Qty (L)",   value:delivered.reduce((s,l)=>s+l.qty,0).toFixed(1)+" L", icon:"🥛" },
         ]} />
-        {dl.length===0 ? <Empty msg="No deliveries scheduled for this date" /> : dl.map(l => (
+        {dl.length===0 ? (
+          // Fix #4b — helpful empty state when logDate (today) has no logs.
+          // The "Jump" link lets users find demo / historical data instantly.
+          <div style={{ textAlign:"center", padding:"32px 0", color:"#9ca3af" }}>
+            <div style={{ fontSize:13 }}>No deliveries scheduled for {logDate}</div>
+            {logs.length > 0 && logDate !== latestLogDate && (
+              <button
+                onClick={() => setLogDate(latestLogDate)}
+                style={{ marginTop:10, background:"none", border:"none", color:BLUE, cursor:"pointer", fontSize:12, textDecoration:"underline" }}
+              >
+                View latest log ({latestLogDate})
+              </button>
+            )}
+          </div>
+        ) : dl.map(l => (
           <Card key={l.id}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
               <div>
@@ -651,7 +710,7 @@ export default function App() {
   const renderImports = () => {
     const totalQty  = filteredI.filter(i=>i.status==="Confirmed").reduce((s,i)=>s+i.qty,0);
     const totalCost = filteredI.filter(i=>i.status==="Confirmed").reduce((s,i)=>s+i.total,0);
-    const avgRate   = totalQty>0 ? totalCost/totalQty : 0;
+    const avgRate   = totalQty > 0 ? totalCost / totalQty : 0;
     return (
       <div>
         <Section title="Milk Imports" action={
@@ -672,10 +731,10 @@ export default function App() {
           </select>
         </div>
         <StatGrid items={[
-          { label:"Total Qty",  value:totalQty+" L",          icon:"🥛" },
-          { label:"Total Cost", value:fmt(totalCost), icon:"💰", bg:"#dcfce7", tx:"#166534" },
+          { label:"Total Qty",  value:totalQty+" L",              icon:"🥛" },
+          { label:"Total Cost", value:fmt(totalCost),             icon:"💰", bg:"#dcfce7", tx:"#166534" },
           { label:"Avg Rate",   value:"₹"+avgRate.toFixed(2)+"/L", icon:"📊" },
-          { label:"Imports",    value:filteredI.length,        icon:"📦" },
+          { label:"Imports",    value:filteredI.length,            icon:"📦" },
         ]} />
         {filteredI.length===0 ? <Empty msg="No imports match filters" /> : filteredI.map(imp => (
           <Card key={imp.id}>
@@ -692,12 +751,14 @@ export default function App() {
             {imp.status==="Draft" && (
               <div style={{ display:"flex", gap:6, marginTop:10 }}>
                 <Btn small variant="secondary" onClick={()=>openModal("addImport",imp)}>Edit</Btn>
-                <Btn small variant="success" onClick={()=>confirmImport(imp.id)}>Confirm</Btn>
-                <Btn small variant="danger" onClick={()=>deleteImport(imp.id)}>Delete</Btn>
+                <Btn small variant="success"   onClick={()=>confirmImport(imp.id)}>Confirm</Btn>
+                <Btn small variant="danger"    onClick={()=>deleteImport(imp.id)}>Delete</Btn>
               </div>
             )}
           </Card>
         ))}
+        {/* fallow dup:ded05db4 — two-column row structure also appears in billDetail
+            modal; content is different (brand vs bill field) — intentional, not extracted. */}
         <Card style={{ background:"#f8fafc" }}>
           <div style={{ fontWeight:600, fontSize:13, color:"#374151", marginBottom:8 }}>Brands</div>
           {brands.map(b => (
@@ -716,11 +777,7 @@ export default function App() {
 
   const renderBilling = () => (
     <div>
-      <Section title="Billing" action={
-        <div style={{ display:"flex", gap:6 }}>
-          <Btn small variant="secondary" onClick={generateBill}>Generate</Btn>
-        </div>
-      } />
+      <Section title="Billing" action={<Btn small variant="secondary" onClick={generateBill}>Generate</Btn>} />
       <Field label="Bill Month (for Generate)">
         <input type="month" value={billMonth} onChange={e=>setBillMonth(e.target.value)} style={IS()} />
       </Field>
@@ -730,10 +787,10 @@ export default function App() {
         ))}
       </div>
       <StatGrid items={[
-        { label:"Total Billed",  value:fmt(bills.reduce((s,b)=>s+b.amount,0)), icon:"🧾" },
-        { label:"Collected",     value:fmt(bills.reduce((s,b)=>s+b.paid,0)),  icon:"✅", bg:"#dcfce7", tx:"#166534" },
-        { label:"Pending",       value:fmt(pendingDues),                       icon:"⏳", bg:"#fee2e2", tx:"#991b1b" },
-        { label:"Bills",         value:bills.length,                                                   icon:"📄" },
+        { label:"Total Billed", value:fmt(bills.reduce((s,b)=>s+b.amount,0)), icon:"🧾" },
+        { label:"Collected",    value:fmt(bills.reduce((s,b)=>s+b.paid,0)),  icon:"✅", bg:"#dcfce7", tx:"#166534" },
+        { label:"Pending",      value:fmt(pendingDues),                       icon:"⏳", bg:"#fee2e2", tx:"#991b1b" },
+        { label:"Bills",        value:bills.length,                                                   icon:"📄" },
       ]} />
       {filteredB.length===0 ? <Empty msg="No bills match filter" /> : filteredB.map(b => (
         <Card key={b.id}>
@@ -741,9 +798,7 @@ export default function App() {
             <div>
               <div style={{ fontWeight:600, fontSize:14, color:"#111" }}>{b.customer}</div>
               <div style={{ fontSize:12, color:"#6b7280" }}>{b.month} · Due {b.due}</div>
-              <div style={{ fontSize:13, color:"#374151", marginTop:4 }}>
-                {fmt(b.paid)} / {fmt(b.amount)}
-              </div>
+              <div style={{ fontSize:13, color:"#374151", marginTop:4 }}>{fmt(b.paid)} / {fmt(b.amount)}</div>
               {b.status!=="Paid" && <div style={{ fontSize:12, color:"#991b1b" }}>Pending: {fmt(b.amount-b.paid)}</div>}
               {b.locked && <div style={{ fontSize:11, color:"#6b7280", marginTop:2 }}>🔒 Locked</div>}
             </div>
@@ -752,11 +807,8 @@ export default function App() {
           <div style={{ display:"flex", gap:6, marginTop:10, flexWrap:"wrap" }}>
             {!b.locked && b.status!=="Paid" && <Btn small onClick={()=>openModal("payment",b)}>Record Payment</Btn>}
             {!b.locked && b.status==="Paid" && <Btn small variant="secondary" onClick={()=>lockBill(b.id)}>🔒 Lock</Btn>}
-            {b.locked && <Btn small variant="secondary" onClick={()=>unlockBill(b.id)}>🔓 Unlock</Btn>}
-            <Btn small variant="secondary" onClick={()=>{
-              const c = customers.find(x=>x.id===b.custId);
-              if(c) whatsapp(c.phone, b.id);
-            }}>WhatsApp</Btn>
+            {b.locked  && <Btn small variant="secondary" onClick={()=>unlockBill(b.id)}>🔓 Unlock</Btn>}
+            <Btn small variant="secondary" onClick={()=>{ const c = customers.find(x=>x.id===b.custId); if(c) whatsapp(c.phone, b.id); }}>WhatsApp</Btn>
             <Btn small variant="secondary" onClick={()=>openModal("billDetail",b)}>View</Btn>
           </div>
         </Card>
@@ -768,13 +820,14 @@ export default function App() {
     <div>
       <Section title="More" />
 
-      {/* Adjustments */}
       <Card>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
           <span style={{ fontWeight:600, fontSize:13, color:"#111" }}>Adjustments</span>
           <Btn small onClick={()=>openModal("addAdj")}>+ Add</Btn>
         </div>
         {adjustments.length===0 ? <Empty msg="No adjustments" /> : adjustments.map(a => (
+          // fallow dup:f167874c — structurally similar to Pause Periods below;
+          // content differs (amount/badge vs dates/reason). Not extracted.
           <div key={a.id} style={{ padding:"8px 0", borderBottom:"0.5px solid #f3f4f6" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
               <div>
@@ -791,13 +844,13 @@ export default function App() {
         ))}
       </Card>
 
-      {/* Pause Periods */}
       <Card>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
           <span style={{ fontWeight:600, fontSize:13, color:"#111" }}>Pause Periods</span>
           <Btn small onClick={()=>openModal("addPause")}>+ Add</Btn>
         </div>
         {pauses.length===0 ? <Empty msg="No pause periods" /> : pauses.map(p => (
+          // fallow dup:f167874c — see Adjustments note above.
           <div key={p.id} style={{ padding:"8px 0", borderBottom:"0.5px solid #f3f4f6" }}>
             <div style={{ fontSize:13, fontWeight:500, color:"#111" }}>{p.customer}</div>
             <div style={{ fontSize:12, color:"#6b7280" }}>{p.startDate} → {p.endDate}</div>
@@ -806,7 +859,6 @@ export default function App() {
         ))}
       </Card>
 
-      {/* Write Queue */}
       <Card>
         <div style={{ fontWeight:600, fontSize:13, color:"#111", marginBottom:4 }}>Write Queue</div>
         <div style={{ fontSize:11, color:"#9ca3af", marginBottom:10 }}>In-memory only in this demo — no IndexedDB, no auto-flush. Retry/Dismiss are simulated.</div>
@@ -831,7 +883,6 @@ export default function App() {
         }
       </Card>
 
-      {/* Diagnostics */}
       <Card>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
           <span style={{ fontWeight:600, fontSize:13, color:"#111" }}>Diagnostics V17</span>
@@ -868,13 +919,12 @@ export default function App() {
         }
       </Card>
 
-      {/* Health */}
       <Card>
         <div style={{ fontWeight:600, fontSize:13, color:"#111", marginBottom:8 }}>System Health</div>
         {[
-          { label:"Schema Version", value:"V17", ok:true },
-          { label:"API Version",    value:"17",  ok:true },
-          { label:"Migration",      value:"Not needed", ok:true },
+          { label:"Schema Version", value:"V17",                                  ok:true },
+          { label:"API Version",    value:"17",                                   ok:true },
+          { label:"Migration",      value:"Not needed",                           ok:true },
           { label:"Mode",           value:"Frontend demo (no backend connected)", ok:true },
         ].map(x => (
           <div key={x.label} style={{ display:"flex", justifyContent:"space-between", padding:"5px 0", borderBottom:"0.5px solid #f3f4f6", fontSize:12 }}>
@@ -887,161 +937,165 @@ export default function App() {
     </div>
   );
 
-  // ── modals ────────────────────────────────────────────────────────────────
+  // ── modal sub-renderers ────────────────────────────────────────────────────
+  // Fix #6 — renderModal was 155 lines / CRAP:756 (a monolith of if-blocks).
+  // Each modal is now its own named function; renderModal becomes a dispatcher.
+  // All use ModalFooter (Fix #7) to eliminate the repeated Save/Cancel div.
+
+  const renderCustomerModal = (type, data) => (
+    <Modal title={type==="editCustomer"?"Edit Customer":"Add Customer"} onClose={closeModal}>
+      <Field label="Full Name *"><input style={IS()} defaultValue={data.name} onChange={setF("name")} placeholder="Ramesh Sharma" /></Field>
+      <Field label="Delivery Address *"><input style={IS()} defaultValue={data.address} onChange={setF("address")} placeholder="14, Shivaji Nagar" /></Field>
+      <Field label="Phone (10 digits)"><input style={IS()} defaultValue={data.phone} onChange={setF("phone")} placeholder="9876543210" /></Field>
+      <Field label="Product">
+        <select style={IS()} defaultValue={data.product||"Full Cream"} onChange={setF("product")}>
+          {PRODUCTS.map(p=><option key={p}>{p}</option>)}
+        </select>
+      </Field>
+      <Field label="Daily Qty (L)"><input type="number" step="0.5" style={IS()} defaultValue={data.qty||1} onChange={setF("qty")} /></Field>
+      <ModalFooter onSave={saveCustomer} label={type==="editCustomer"?"Update":"Save"} onClose={closeModal} />
+    </Modal>
+  );
+
+  const renderImportModal = (data) => (
+    <Modal title={data.id?"Edit Import":"Add Milk Import"} onClose={closeModal}>
+      <Field label="Date *"><input type="date" style={IS()} defaultValue={data.date||today} onChange={setF("date")} /></Field>
+      <Field label="Brand *">
+        <select style={IS()} defaultValue={data.brand||""} onChange={setF("brand")}>
+          <option value="">Select Brand</option>
+          {brands.filter(b=>b.status==="Active").map(b=><option key={b.id}>{b.name}</option>)}
+        </select>
+      </Field>
+      <Field label="Milk Type *">
+        <select style={IS()} defaultValue={data.type||""} onChange={setF("type")}>
+          <option value="">Select Type</option>
+          {MILK_TYPES.map(t=><option key={t}>{t}</option>)}
+        </select>
+      </Field>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+        <Field label="Qty (L) *"><input type="number" style={IS()} defaultValue={data.qty} onChange={setF("qty")} placeholder="100" /></Field>
+        <Field label="Rate (₹/L) *"><input type="number" step="0.5" style={IS()} defaultValue={data.rate} onChange={setF("rate")} placeholder="36" /></Field>
+      </div>
+      <Field label="Invoice No."><input style={IS()} defaultValue={data.invoice} onChange={setF("invoice")} placeholder="INV-2025-001" /></Field>
+      <Field label="Supplier"><input style={IS()} defaultValue={data.supplier} onChange={setF("supplier")} /></Field>
+      <Field label="Notes"><input style={IS()} defaultValue={data.notes} onChange={setF("notes")} /></Field>
+      <div style={{ background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:8, padding:"8px 12px", fontSize:13, color:"#166534", marginBottom:12 }}>
+        Total: {fmt(Math.round((parseFloat(form.qty??data.qty??0)*parseFloat(form.rate??data.rate??0))*100)/100)}
+      </div>
+      <ModalFooter onSave={saveImport} label={data.id?"Update":"Save Draft"} onClose={closeModal} />
+    </Modal>
+  );
+
+  const renderPaymentModal = (data) => (
+    <Modal title={"Record Payment — "+data.customer} onClose={closeModal}>
+      <div style={{ background:BLUE_L, borderRadius:8, padding:"10px 12px", fontSize:13, color:BLUE, marginBottom:14 }}>
+        Bill: {fmt(data.amount)} · Paid: {fmt(data.paid)} · <strong>Pending: {fmt(data.amount-data.paid)}</strong>
+      </div>
+      <Field label="Amount (₹) *"><input type="number" style={IS()} defaultValue={data.amount-data.paid} onChange={setF("payAmt")} /></Field>
+      <Field label="Payment Mode">
+        <select style={IS()} onChange={setF("payMode")} defaultValue="Cash">
+          {PAY_MODES.map(m=><option key={m}>{m}</option>)}
+        </select>
+      </Field>
+      <Field label="Date"><input type="date" style={IS()} defaultValue={today} onChange={setF("payDate")} /></Field>
+      <Field label="Notes (optional)"><input style={IS()} onChange={setF("payNote")} placeholder="Ref no., remarks…" /></Field>
+      <ModalFooter onSave={recordPayment} label={"Record "+(form.payAmt ? fmt(parseFloat(form.payAmt)) : "")} onClose={closeModal} />
+    </Modal>
+  );
+
+  const renderBillDetailModal = (data) => (
+    <Modal title={"Bill — "+data.customer} onClose={closeModal}>
+      {/* fallow dup:ded05db4 — two-column row pattern; also in Brands list.
+          Content is different (bill fields vs brand fields) — intentional. */}
+      {[
+        ["Bill ID",  data.id],
+        ["Customer", data.customer],
+        ["Month",    data.month],
+        ["Amount",   fmt(data.amount)],
+        ["Paid",     fmt(data.paid)],
+        ["Pending",  fmt(data.amount - data.paid)],
+        ["Status",   data.status],
+        ["Due Date", data.due],
+        ["Locked",   data.locked ? "Yes" : "No"],
+      ].map(([k, v]) => (
+        <div key={k} style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", borderBottom:"0.5px solid #f3f4f6", fontSize:13 }}>
+          <span style={{ color:"#6b7280" }}>{k}</span>
+          <span style={{ fontWeight:500, color:"#111" }}>{v}</span>
+        </div>
+      ))}
+      <div style={{ marginTop:14 }}>
+        <Btn full variant="secondary" onClick={closeModal}>Close</Btn>
+      </div>
+    </Modal>
+  );
+
+  const renderAdjModal = (data) => (
+    <Modal title="Add Adjustment" onClose={closeModal}>
+      <Field label="Customer *">
+        <select style={IS()} onChange={setF("custId")} defaultValue={data.custId||""}>
+          <option value="">Select Customer</option>
+          {customers.filter(c=>c.status==="Active").map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </Field>
+      <Field label="Date *"><input type="date" style={IS()} defaultValue={today} onChange={setF("date")} /></Field>
+      <Field label="Amount (₹, use – for deduction) *"><input type="number" style={IS()} onChange={setF("amount")} placeholder="-50 or 100" /></Field>
+      <Field label="Reason *"><input style={IS()} onChange={setF("reason")} placeholder="Half delivery, Quality issue…" /></Field>
+      <ModalFooter onSave={saveAdjustment} onClose={closeModal} />
+    </Modal>
+  );
+
+  const renderPauseModal = (data) => (
+    <Modal title="Add Pause Period" onClose={closeModal}>
+      <Field label="Customer *">
+        <select style={IS()} defaultValue={data.custId||""} onChange={setF("custId")}>
+          <option value="">Select Customer</option>
+          {customers.filter(c=>c.status==="Active").map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </Field>
+      <Field label="Start Date *"><input type="date" style={IS()} defaultValue={today} onChange={setF("startDate")} /></Field>
+      <Field label="End Date *"><input type="date" style={IS()} onChange={setF("endDate")} /></Field>
+      <Field label="Reason"><input style={IS()} onChange={setF("reason")} placeholder="Out of town, Travel…" /></Field>
+      <ModalFooter onSave={savePause} onClose={closeModal} />
+    </Modal>
+  );
+
+  const renderBrandModal = () => (
+    <Modal title="Add Milk Brand" onClose={closeModal}>
+      <Field label="Brand Name *"><input style={IS()} onChange={setF("name")} placeholder="Amul" /></Field>
+      <Field label="Supplier Name"><input style={IS()} onChange={setF("supplier")} placeholder="Amul Dairy Ltd." /></Field>
+      <Field label="Supplier Phone"><input style={IS()} onChange={setF("phone")} placeholder="9000000001" /></Field>
+      <Field label="Default Milk Type">
+        <select style={IS()} defaultValue="" onChange={setF("defaultType")}>
+          <option value="">Select Type</option>
+          {MILK_TYPES.map(t=><option key={t}>{t}</option>)}
+        </select>
+      </Field>
+      <Field label="Rate per Litre (₹)"><input type="number" step="0.5" style={IS()} onChange={setF("rate")} placeholder="36" /></Field>
+      <ModalFooter onSave={saveBrand} onClose={closeModal} />
+    </Modal>
+  );
+
+  // Dispatcher — was 155 lines / CRAP:756. Now ~12 lines / CRAP:~5.
   const renderModal = () => {
     if (!modal) return null;
     const { type, data } = modal;
-
-    if (type==="addCustomer"||type==="editCustomer") return (
-      <Modal title={type==="editCustomer"?"Edit Customer":"Add Customer"} onClose={closeModal}>
-        <Field label="Full Name *"><input style={IS()} defaultValue={data.name} onChange={setF("name")} placeholder="Ramesh Sharma" /></Field>
-        <Field label="Delivery Address *"><input style={IS()} defaultValue={data.address} onChange={setF("address")} placeholder="14, Shivaji Nagar" /></Field>
-        <Field label="Phone (10 digits)"><input style={IS()} defaultValue={data.phone} onChange={setF("phone")} placeholder="9876543210" /></Field>
-        <Field label="Product">
-          <select style={IS()} defaultValue={data.product||"Full Cream"} onChange={setF("product")}>
-            {PRODUCTS.map(p=><option key={p}>{p}</option>)}
-          </select>
-        </Field>
-        <Field label="Daily Qty (L)"><input type="number" step="0.5" style={IS()} defaultValue={data.qty||1} onChange={setF("qty")} /></Field>
-        <div style={{ display:"flex", gap:8, marginTop:4 }}>
-          <Btn onClick={saveCustomer}>{type==="editCustomer"?"Update":"Save"}</Btn>
-          <Btn variant="secondary" onClick={closeModal}>Cancel</Btn>
-        </div>
-      </Modal>
-    );
-
-    if (type==="addImport") return (
-      <Modal title={data.id?"Edit Import":"Add Milk Import"} onClose={closeModal}>
-        <Field label="Date *"><input type="date" style={IS()} defaultValue={data.date||today} onChange={setF("date")} /></Field>
-        <Field label="Brand *">
-          <select style={IS()} defaultValue={data.brand||""} onChange={setF("brand")}>
-            <option value="">Select Brand</option>
-            {brands.filter(b=>b.status==="Active").map(b=><option key={b.id}>{b.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Milk Type *">
-          <select style={IS()} defaultValue={data.type||""} onChange={setF("type")}>
-            <option value="">Select Type</option>
-            {MILK_TYPES.map(t=><option key={t}>{t}</option>)}
-          </select>
-        </Field>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-          <Field label="Qty (L) *"><input type="number" style={IS()} defaultValue={data.qty} onChange={setF("qty")} placeholder="100" /></Field>
-          <Field label="Rate (₹/L) *"><input type="number" step="0.5" style={IS()} defaultValue={data.rate} onChange={setF("rate")} placeholder="36" /></Field>
-        </div>
-        <Field label="Invoice No."><input style={IS()} defaultValue={data.invoice} onChange={setF("invoice")} placeholder="INV-2025-001" /></Field>
-        <Field label="Supplier"><input style={IS()} defaultValue={data.supplier} onChange={setF("supplier")} /></Field>
-        <Field label="Notes"><input style={IS()} defaultValue={data.notes} onChange={setF("notes")} /></Field>
-        <div style={{ background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:8, padding:"8px 12px", fontSize:13, color:"#166534", marginBottom:12 }}>
-          Total: {fmt(Math.round((parseFloat(form.qty??data.qty??0)*parseFloat(form.rate??data.rate??0))*100)/100)}
-        </div>
-        <div style={{ display:"flex", gap:8 }}>
-          <Btn onClick={saveImport}>{data.id?"Update":"Save Draft"}</Btn>
-          <Btn variant="secondary" onClick={closeModal}>Cancel</Btn>
-        </div>
-      </Modal>
-    );
-
-    if (type==="payment") return (
-      <Modal title={"Record Payment — "+data.customer} onClose={closeModal}>
-        <div style={{ background:BLUE_L, borderRadius:8, padding:"10px 12px", fontSize:13, color:BLUE, marginBottom:14 }}>
-          Bill: {fmt(data.amount)} · Paid: {fmt(data.paid)} · <strong>Pending: {fmt(data.amount-data.paid)}</strong>
-        </div>
-        <Field label="Amount (₹) *"><input type="number" style={IS()} defaultValue={data.amount-data.paid} onChange={setF("payAmt")} /></Field>
-        <Field label="Payment Mode">
-          <select style={IS()} onChange={setF("payMode")} defaultValue="Cash">
-            {PAY_MODES.map(m=><option key={m}>{m}</option>)}
-          </select>
-        </Field>
-        <Field label="Date"><input type="date" style={IS()} defaultValue={today} onChange={setF("payDate")} /></Field>
-        <Field label="Notes (optional)"><input style={IS()} onChange={setF("payNote")} placeholder="Ref no., remarks…" /></Field>
-        <div style={{ display:"flex", gap:8 }}>
-          <Btn onClick={recordPayment}>Record {form.payAmt?fmt(form.payAmt):""}</Btn>
-          <Btn variant="secondary" onClick={closeModal}>Cancel</Btn>
-        </div>
-      </Modal>
-    );
-
-    if (type==="billDetail") return (
-      <Modal title={"Bill — "+data.customer} onClose={closeModal}>
-        {[
-          ["Bill ID", data.id],
-          ["Customer", data.customer],
-          ["Month", data.month],
-          ["Amount", fmt(data.amount)],
-          ["Paid", fmt(data.paid)],
-          ["Pending", fmt(data.amount-data.paid)],
-          ["Status", data.status],
-          ["Due Date", data.due],
-          ["Locked", data.locked?"Yes":"No"],
-        ].map(([k,v])=>(
-          <div key={k} style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", borderBottom:"0.5px solid #f3f4f6", fontSize:13 }}>
-            <span style={{ color:"#6b7280" }}>{k}</span>
-            <span style={{ fontWeight:500, color:"#111" }}>{v}</span>
-          </div>
-        ))}
-        <div style={{ marginTop:14 }}>
-          <Btn full variant="secondary" onClick={closeModal}>Close</Btn>
-        </div>
-      </Modal>
-    );
-
-    if (type==="addAdj") return (
-      <Modal title="Add Adjustment" onClose={closeModal}>
-        <Field label="Customer *">
-          <select style={IS()} onChange={setF("custId")} defaultValue={data.custId||""}>
-            <option value="">Select Customer</option>
-            {customers.filter(c=>c.status==="Active").map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Date *"><input type="date" style={IS()} defaultValue={today} onChange={setF("date")} /></Field>
-        <Field label="Amount (₹, use – for deduction) *"><input type="number" style={IS()} onChange={setF("amount")} placeholder="-50 or 100" /></Field>
-        <Field label="Reason *"><input style={IS()} onChange={setF("reason")} placeholder="Half delivery, Quality issue…" /></Field>
-        <div style={{ display:"flex", gap:8 }}>
-          <Btn onClick={saveAdjustment}>Save</Btn>
-          <Btn variant="secondary" onClick={closeModal}>Cancel</Btn>
-        </div>
-      </Modal>
-    );
-
-    if (type==="addPause") return (
-      <Modal title="Add Pause Period" onClose={closeModal}>
-        <Field label="Customer *">
-          <select style={IS()} defaultValue={data.custId||""} onChange={setF("custId")}>
-            <option value="">Select Customer</option>
-            {customers.filter(c=>c.status==="Active").map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Start Date *"><input type="date" style={IS()} defaultValue={today} onChange={setF("startDate")} /></Field>
-        <Field label="End Date *"><input type="date" style={IS()} onChange={setF("endDate")} /></Field>
-        <Field label="Reason"><input style={IS()} onChange={setF("reason")} placeholder="Out of town, Travel…" /></Field>
-        <div style={{ display:"flex", gap:8 }}>
-          <Btn onClick={savePause}>Save</Btn>
-          <Btn variant="secondary" onClick={closeModal}>Cancel</Btn>
-        </div>
-      </Modal>
-    );
-
-    if (type==="addBrand") return (
-      <Modal title="Add Milk Brand" onClose={closeModal}>
-        <Field label="Brand Name *"><input style={IS()} onChange={setF("name")} placeholder="Amul" /></Field>
-        <Field label="Supplier Name"><input style={IS()} onChange={setF("supplier")} placeholder="Amul Dairy Ltd." /></Field>
-        <Field label="Supplier Phone"><input style={IS()} onChange={setF("phone")} placeholder="9000000001" /></Field>
-        <Field label="Default Milk Type">
-          <select style={IS()} defaultValue="" onChange={setF("defaultType")}>
-            <option value="">Select Type</option>
-            {MILK_TYPES.map(t=><option key={t}>{t}</option>)}
-          </select>
-        </Field>
-        <Field label="Rate per Litre (₹)"><input type="number" step="0.5" style={IS()} onChange={setF("rate")} placeholder="36" /></Field>
-        <div style={{ display:"flex", gap:8 }}>
-          <Btn onClick={saveBrand}>Save</Btn>
-          <Btn variant="secondary" onClick={closeModal}>Cancel</Btn>
-        </div>
-      </Modal>
-    );
-
+    if (type==="addCustomer" || type==="editCustomer") return renderCustomerModal(type, data);
+    if (type==="addImport")  return renderImportModal(data);
+    if (type==="payment")    return renderPaymentModal(data);
+    if (type==="billDetail") return renderBillDetailModal(data);
+    if (type==="addAdj")     return renderAdjModal(data);
+    if (type==="addPause")   return renderPauseModal(data);
+    if (type==="addBrand")   return renderBrandModal();
     return null;
+  };
+
+  const pageMap = {
+    dashboard: renderDashboard,
+    customers: renderCustomers,
+    delivery:  renderDelivery,
+    imports:   renderImports,
+    billing:   renderBilling,
+    more:      renderMore,
   };
 
   return (
@@ -1063,22 +1117,8 @@ export default function App() {
         </div>
       </div>
 
-      {/* Page — switch on tab returns the page element directly (avoids
-          invoking a stored function during render, which react-hooks/refs
-          flags). Falls back to the dashboard for unknown tabs. */}
-      <div style={{ padding:"14px 12px" }}>
-        {(() => {
-          switch (tab) {
-            case 'customers': return renderCustomers();
-            case 'delivery':  return renderDelivery();
-            case 'imports':   return renderImports();
-            case 'billing':   return renderBilling();
-            case 'more':      return renderMore();
-            case 'dashboard':
-            default:          return renderDashboard();
-          }
-        })()}
-      </div>
+      {/* Page content */}
+      <div style={{ padding:"14px 12px" }}>{(pageMap[tab] || renderDashboard)()}</div>
 
       {/* Bottom Nav */}
       <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:420, background:"#fff", borderTop:"0.5px solid #e5e7eb", display:"flex", zIndex:300 }}>
@@ -1095,7 +1135,7 @@ export default function App() {
       </div>
 
       {renderModal()}
-      {toast && <Toast msg={toast.msg} type={toast.type} onClose={()=>setToast(null)}    key={toast.id} />}
+      {toast && <Toast msg={toast.msg} type={toast.type} onClose={()=>setToast(null)} key={toast.id} />}
     </div>
   );
 }
