@@ -908,11 +908,13 @@ export default function App() {
   );
 
   // ── modals ────────────────────────────────────────────────────────────────
-  const renderModal = () => {
-    if (!modal) return null;
+  // Each modal type is a small named closure defined inside App, so it reads
+  // form/setF/closeModal/handlers directly from scope — no prop plumbing and
+  // the form/modal lockstep invariant stays in one place. renderModal() below
+  // is just a dispatch-table lookup on modal.type.
+  const renderCustomerModal = () => {
     const { type, data } = modal;
-
-    if (type==="addCustomer"||type==="editCustomer") return (
+    return (
       <Modal title={type==="editCustomer"?"Edit Customer":"Add Customer"} onClose={closeModal}>
         <Field label="Full Name *"><input style={IS()} defaultValue={data.name} onChange={setF("name")} placeholder="Ramesh Sharma" /></Field>
         <Field label="Delivery Address *"><input style={IS()} defaultValue={data.address} onChange={setF("address")} placeholder="14, Shivaji Nagar" /></Field>
@@ -929,8 +931,11 @@ export default function App() {
         </div>
       </Modal>
     );
+  };
 
-    if (type==="addImport") return (
+  const renderImportModal = () => {
+    const { data } = modal;
+    return (
       <Modal title={data.id?"Edit Import":"Add Milk Import"} onClose={closeModal}>
         <Field label="Date *"><input type="date" style={IS()} defaultValue={data.date||today} onChange={setF("date")} /></Field>
         <Field label="Brand *">
@@ -961,8 +966,11 @@ export default function App() {
         </div>
       </Modal>
     );
+  };
 
-    if (type==="payment") return (
+  const renderPaymentModal = () => {
+    const { data } = modal;
+    return (
       <Modal title={"Record Payment — "+data.customer} onClose={closeModal}>
         <div style={{ background:BLUE_L, borderRadius:8, padding:"10px 12px", fontSize:13, color:BLUE, marginBottom:14 }}>
           Bill: {fmt(data.amount)} · Paid: {fmt(data.paid)} · <strong>Pending: {fmt(data.amount-data.paid)}</strong>
@@ -981,8 +989,11 @@ export default function App() {
         </div>
       </Modal>
     );
+  };
 
-    if (type==="billDetail") return (
+  const renderBillDetailModal = () => {
+    const { data } = modal;
+    return (
       <Modal title={"Bill — "+data.customer} onClose={closeModal}>
         {[
           ["Bill ID", data.id],
@@ -1005,8 +1016,11 @@ export default function App() {
         </div>
       </Modal>
     );
+  };
 
-    if (type==="addAdj") return (
+  const renderAdjustmentModal = () => {
+    const { data } = modal;
+    return (
       <Modal title="Add Adjustment" onClose={closeModal}>
         <Field label="Customer *">
           <select style={IS()} onChange={setF("custId")} defaultValue={data.custId||""}>
@@ -1023,8 +1037,11 @@ export default function App() {
         </div>
       </Modal>
     );
+  };
 
-    if (type==="addPause") return (
+  const renderPauseModal = () => {
+    const { data } = modal;
+    return (
       <Modal title="Add Pause Period" onClose={closeModal}>
         <Field label="Customer *">
           <select style={IS()} defaultValue={data.custId||""} onChange={setF("custId")}>
@@ -1041,27 +1058,44 @@ export default function App() {
         </div>
       </Modal>
     );
+  };
 
-    if (type==="addBrand") return (
-      <Modal title="Add Milk Brand" onClose={closeModal}>
-        <Field label="Brand Name *"><input style={IS()} onChange={setF("name")} placeholder="Amul" /></Field>
-        <Field label="Supplier Name"><input style={IS()} onChange={setF("supplier")} placeholder="Amul Dairy Ltd." /></Field>
-        <Field label="Supplier Phone"><input style={IS()} onChange={setF("phone")} placeholder="9000000001" /></Field>
-        <Field label="Default Milk Type">
-          <select style={IS()} defaultValue="" onChange={setF("defaultType")}>
-            <option value="">Select Type</option>
-            {MILK_TYPES.map(t=><option key={t}>{t}</option>)}
-          </select>
-        </Field>
-        <Field label="Rate per Litre (₹)"><input type="number" step="0.5" style={IS()} onChange={setF("rate")} placeholder="36" /></Field>
-        <div style={{ display:"flex", gap:8 }}>
-          <Btn onClick={saveBrand}>Save</Btn>
-          <Btn variant="secondary" onClick={closeModal}>Cancel</Btn>
-        </div>
-      </Modal>
-    );
+  const renderBrandModal = () => (
+    <Modal title="Add Milk Brand" onClose={closeModal}>
+      <Field label="Brand Name *"><input style={IS()} onChange={setF("name")} placeholder="Amul" /></Field>
+      <Field label="Supplier Name"><input style={IS()} onChange={setF("supplier")} placeholder="Amul Dairy Ltd." /></Field>
+      <Field label="Supplier Phone"><input style={IS()} onChange={setF("phone")} placeholder="9000000001" /></Field>
+      <Field label="Default Milk Type">
+        <select style={IS()} defaultValue="" onChange={setF("defaultType")}>
+          <option value="">Select Type</option>
+          {MILK_TYPES.map(t=><option key={t}>{t}</option>)}
+        </select>
+      </Field>
+      <Field label="Rate per Litre (₹)"><input type="number" step="0.5" style={IS()} onChange={setF("rate")} placeholder="36" /></Field>
+      <div style={{ display:"flex", gap:8 }}>
+        <Btn onClick={saveBrand}>Save</Btn>
+        <Btn variant="secondary" onClick={closeModal}>Cancel</Btn>
+      </div>
+    </Modal>
+  );
 
-    return null;
+  // modal.type → renderer. addCustomer and editCustomer share renderCustomerModal,
+  // which internally reads modal.type to pick its own title/button label.
+  const MODAL_RENDERERS = {
+    addCustomer:  renderCustomerModal,
+    editCustomer: renderCustomerModal,
+    addImport:    renderImportModal,
+    payment:      renderPaymentModal,
+    billDetail:   renderBillDetailModal,
+    addAdj:       renderAdjustmentModal,
+    addPause:     renderPauseModal,
+    addBrand:     renderBrandModal,
+  };
+
+  const renderModal = () => {
+    if (!modal) return null;
+    const r = MODAL_RENDERERS[modal.type];
+    return r ? r() : null;
   };
 
   const pageMap = { dashboard:renderDashboard, customers:renderCustomers, delivery:renderDelivery, imports:renderImports, billing:renderBilling, more:renderMore };
