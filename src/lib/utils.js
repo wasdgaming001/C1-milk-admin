@@ -15,18 +15,6 @@ export const getToday = () => new Date().toLocaleDateString("en-CA", { timeZone:
 // Strip every non-digit character from a phone string before validation/use.
 export const cleanPhone = p => String(p || "").replace(/\D/g, "");
 
-// "2025-01" → "Jan 2025". Used in bill headers.
-export const monthLabel = ym => {
-  if (!ym) return "";
-  const [y, m] = ym.split("-");
-  return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][Number(m) - 1] + " " + y;
-};
-
-// Days in a given month ("2025-01" → 31).
-export const daysInMonth = ym => {
-  const [y, m] = ym.split("-").map(Number);
-  return new Date(y, m, 0).getDate();
-};
 
 // Monotonic id generator. Counter lives at module scope so it survives across
 // renders within a session (resets only on full page reload).

@@ -43,8 +43,9 @@ function useAppUi() {
   };
 }
 
-export function useAppState() {
-  const entity = useEntityStore();
+export function useAppState(token) 
+ {
+  const entity = useEntityStore(token);
   const filters = useFilterState();
   const ui = useAppUi();
   const today = useMemo(() => clampedToday(), []);

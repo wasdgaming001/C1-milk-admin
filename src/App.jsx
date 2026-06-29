@@ -10,7 +10,7 @@ import { useAuth } from "./hooks/useAuth.js";
 
 export default function App() {
   const auth = useAuth();
-  const state = useAppState();
+  const state = useAppState(auth.token);
 
   // If not logged in, show the PIN screen
   if (!auth.isAuthenticated) {

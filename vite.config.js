@@ -6,8 +6,11 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   test: {
-    environment: 'node',
-    include: ['src/**/*.test.js'],
+    include: [
+      'src/**/*.test.{js,jsx}', 
+      'public/**/*.test.{js,jsx}', 
+      'netlify/**/*.test.{js,jsx}'
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json'],
