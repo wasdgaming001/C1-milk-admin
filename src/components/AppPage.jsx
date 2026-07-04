@@ -80,15 +80,16 @@ function renderBilling(state, handlers) {
       onBillFilterChange={state.setBillFilter}
       onBillMonthChange={state.setBillMonth}
       onOpenModal={state.openModal}
+      customers={state.customers}
+      onLock={handlers.lockBill}
+      onUnlock={handlers.unlockBill}
+      onWhatsapp={handlers.whatsapp}
+      onOpenModal={state.openModal}
       onGenerateBill={() =>
         handlers.generateMonthlyBills(
           state.billMonth || state.today.substring(0, 7),
         )
       }
-      onLock={handlers.lockBill}
-      onUnlock={handlers.unlockBill}
-      onWhatsapp={handlers.whatsapp}
-      onOpenModal={state.openModal}
     />
   );
 }

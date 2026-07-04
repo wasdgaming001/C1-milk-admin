@@ -1,12 +1,17 @@
 import { useMemo, useCallback } from "react";
 import {
   callApi,
+  mapCustomerFromApi,
+  mapBillFromApi,
   mapImportFromApi,
+  mapLogFromApi,
   mapAdjustmentFromApi,
+  mapPauseFromApi,
+  mapBrandFromApi,
+  mapSubscriptionFromApi,
   mapCustomerToApi,
   mapImportToApi,
   mapPaymentToApi,
-  mapBillFromApi,
 } from "../lib/api.js";
 import { getToday } from "../lib/utils.js";
 import { validateCustomerForm, validateImportForm } from "../lib/validation.js";
@@ -22,6 +27,7 @@ export function useAppHandlers(state) {
     setAdjustments,
     setBrands,
     setSubscriptions,
+    setPauses, // ✅ Added for refetching pauses
     toast$,
     closeModal,
     form = {},
@@ -37,10 +43,12 @@ export function useAppHandlers(state) {
         const f = formArg || form;
         try {
           const payload = mapCustomerToApi(f);
-          const res = await callApi("addCustomer", payload);
-          setCustomers((prev) => [...prev, res.customer]);
+          await callApi("addCustomer", payload);
           showToast("Customer added", "success");
           if (closeModal) closeModal();
+          // ✅ REFRESH FROM SERVER (No more optimistic guessing)
+          const res = await callApi("getCustomers", {});
+          setCustomers((res.customers || []).map(mapCustomerFromApi));
         } catch (e) {
           showToast(e.message, "error");
         }
@@ -49,13 +57,12 @@ export function useAppHandlers(state) {
         const f = formArg || form;
         try {
           const payload = mapCustomerToApi(f);
-          const res = await callApi("updateCustomer", payload);
-          const updated = res.customer || { ...f, version: res.newVersion };
-          setCustomers((prev) =>
-            prev.map((c) => (c.id === f.id ? updated : c)),
-          );
+          await callApi("updateCustomer", payload);
           showToast("Customer updated", "success");
           if (closeModal) closeModal();
+          // ✅ REFRESH FROM SERVER
+          const res = await callApi("getCustomers", {});
+          setCustomers((res.customers || []).map(mapCustomerFromApi));
         } catch (e) {
           showToast(e.message, "error");
         }
@@ -65,9 +72,7 @@ export function useAppHandlers(state) {
   );
 
   // 2. Billing Handlers
-
   const billingHandlers = useMemo(() => {
-    // ✅ 1. Helpers are defined INSIDE the useMemo
     const getPaymentData = (billIdArg, amountArg) => {
       const billId = billIdArg || modal.data?.id || modal.data?.billId;
       const amount = amountArg !== undefined ? amountArg : form.payAmt;
@@ -83,7 +88,6 @@ export function useAppHandlers(state) {
 
     return {
       recordPayment: async (billIdArg, amountArg) => {
-        // ✅ 2. Helpers are USED here
         const { billId, amount } = getPaymentData(billIdArg, amountArg);
         if (!amount || Number(amount) <= 0) {
           showToast("Enter valid amount", "error");
@@ -91,24 +95,12 @@ export function useAppHandlers(state) {
         }
         try {
           const payload = mapPaymentToApi(billId, amount);
-          const res = await callApi("recordPayment", payload);
-          setBills((prev) =>
-            prev.map((b) =>
-              b.id !== billId
-                ? b
-                : {
-                    ...b,
-                    paid: res.amountPaid ?? b.paid + Number(amount),
-                    status:
-                      res.status ??
-                      (b.paid + Number(amount) >= b.amount
-                        ? "Paid"
-                        : "Partial"),
-                  },
-            ),
-          );
+          await callApi("recordPayment", payload);
           showToast(`₹${amount} recorded`, "success");
           if (closeModal) closeModal();
+          // ✅ REFRESH FROM SERVER
+          const res = await callApi("getBills", {});
+          setBills((res.bills || []).map(mapBillFromApi));
         } catch (e) {
           showToast(e.message, "error");
         }
@@ -116,15 +108,14 @@ export function useAppHandlers(state) {
 
       generateMonthlyBills: async (month) => {
         try {
-          const activeCustomers = customers.filter(
-            (c) => c.status === "Active",
-          );
+          const activeCustomers = customers.filter((c) => c.status === "Active");
           for (const c of activeCustomers) {
             await callApi("generateMonthBill", {
               customerId: c.id,
               month,
             }).catch(() => {});
           }
+          // ✅ REFRESH FROM SERVER
           const res = await callApi("getBills", {});
           setBills((res.bills || []).map(mapBillFromApi));
           showToast("Bills generated", "success");
@@ -134,12 +125,7 @@ export function useAppHandlers(state) {
       },
 
       saveAdjustment: async (billIdArg, amountArg, reasonArg) => {
-        // ✅ 3. Helpers are USED here
-        const { billId, amount, reason } = getAdjustmentData(
-          billIdArg,
-          amountArg,
-          reasonArg,
-        );
+        const { billId, amount, reason } = getAdjustmentData(billIdArg, amountArg, reasonArg);
         if (!billId || !amount || !reason) {
           showToast("Fill all fields", "error");
           return;
@@ -152,16 +138,11 @@ export function useAppHandlers(state) {
             idempotencyKey: Date.now().toString(),
           };
           await callApi("addAdjustment", payload);
-          const newAdj = {
-            id: Date.now().toString(),
-            billId,
-            amount: Number(amount),
-            reason,
-            date: getToday(),
-          };
-          setAdjustments((prev) => [...prev, newAdj]);
           showToast("Added", "success");
           if (closeModal) closeModal();
+          // ✅ REFRESH FROM SERVER
+          const res = await callApi("getAdjustments", {});
+          setAdjustments((res.adjustments || []).map(mapAdjustmentFromApi));
         } catch (e) {
           showToast(e.message, "error");
         }
@@ -176,10 +157,12 @@ export function useAppHandlers(state) {
         const f = formArg || form;
         try {
           const payload = mapImportToApi(f);
-          const res = await callApi("addMilkImport", payload);
-          setImports((prev) => [...prev, res.import]);
+          await callApi("addMilkImport", payload);
           showToast("Import added", "success");
           if (closeModal) closeModal();
+          // ✅ REFRESH FROM SERVER
+          const res = await callApi("getMilkImports", {});
+          setImports((res.imports || []).map(mapImportFromApi));
         } catch (e) {
           showToast(e.message, "error");
         }
@@ -188,11 +171,12 @@ export function useAppHandlers(state) {
         const f = formArg || form;
         try {
           const payload = mapImportToApi(f);
-          const res = await callApi("updateMilkImport", payload);
-          const updated = res.import || { ...f, version: res.newVersion };
-          setImports((prev) => prev.map((i) => (i.id === f.id ? updated : i)));
+          await callApi("updateMilkImport", payload);
           showToast("Import updated", "success");
           if (closeModal) closeModal();
+          // ✅ REFRESH FROM SERVER
+          const res = await callApi("getMilkImports", {});
+          setImports((res.imports || []).map(mapImportFromApi));
         } catch (e) {
           showToast(e.message, "error");
         }
@@ -213,19 +197,10 @@ export function useAppHandlers(state) {
             idempotencyKey: Date.now().toString(),
           };
           await callApi("updateLogEntry", payload);
-
-          setLogs((prev) =>
-            prev.map((l) =>
-              l.id === logId
-                ? {
-                    ...l,
-                    delivered,
-                    status: delivered ? "Delivered" : "Pending",
-                  }
-                : l,
-            ),
-          );
           showToast("Log updated", "success");
+          // ✅ REFRESH FROM SERVER
+          const res = await callApi("getDailyLogs", { date: getToday() });
+          setLogs((res.logs || []).map(mapLogFromApi));
         } catch (e) {
           showToast(e.message, "error");
         }
@@ -237,17 +212,9 @@ export function useAppHandlers(state) {
             idempotencyKey: Date.now().toString(),
           };
           await callApi("bulkUpsertLogs", payload);
-
+          // ✅ REFRESH FROM SERVER
           const res = await callApi("getDailyLogs", { date: getToday() });
-          setLogs(
-            (res.logs || []).map((l) => ({
-              id: l.logId,
-              custId: l.customerId,
-              date: l.date,
-              delivered: l.delivered,
-              status: l.status,
-            })),
-          );
+          setLogs((res.logs || []).map(mapLogFromApi));
           showToast("Logs saved", "success");
         } catch (e) {
           showToast(e.message, "error");
@@ -272,6 +239,9 @@ export function useAppHandlers(state) {
           await callApi("addPausePeriod", payload);
           showToast("Pause added", "success");
           if (closeModal) closeModal();
+          // ✅ REFRESH FROM SERVER
+          const res = await callApi("getPauses", {});
+          setPauses((res.pauses || []).map(mapPauseFromApi));
         } catch (e) {
           showToast(e.message, "error");
         }
@@ -282,16 +252,18 @@ export function useAppHandlers(state) {
           await callApi("addMilkBrand", payload);
           showToast("Brand added", "success");
           if (closeModal) closeModal();
+          // ✅ REFRESH FROM SERVER
+          const res = await callApi("getBrands", {});
+          setBrands((res.brands || []).map(mapBrandFromApi));
         } catch (e) {
           showToast(e.message, "error");
         }
       },
     }),
-    [showToast, closeModal],
+    [showToast, closeModal, setPauses, setBrands],
   );
 
-  // 6. Dispatch helpers — modal Save buttons funnel through these so the
-  //    modal layer doesn't need to know whether something is create vs edit.
+  // 6. Dispatch helpers
   const saveCustomer = useCallback(
     async (formArg) => {
       const f = formArg || form;
@@ -306,7 +278,7 @@ export function useAppHandlers(state) {
       }
       return customerHandlers.addCustomer(f);
     },
-    [customerHandlers, form],
+    [customerHandlers, form, showToast], // ✅ Added showToast to deps
   );
 
   const saveImport = useCallback(
@@ -323,7 +295,7 @@ export function useAppHandlers(state) {
       }
       return importHandlers.addMilkImport(f);
     },
-    [importHandlers, form],
+    [importHandlers, form, showToast], // ✅ Added showToast to deps
   );
 
   const savePause = useCallback(
@@ -364,18 +336,11 @@ export function useAppHandlers(state) {
             f.rate !== undefined && f.rate !== "" ? Number(f.rate) : undefined,
           idempotencyKey: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
         });
-        setBrands((prev) => [
-          ...prev,
-          {
-            id: "BRAND-" + Date.now().toString(36).toUpperCase(),
-            name: brandName.trim(),
-            supplier: f.supplier || "",
-            phone: f.phone || "",
-            status: "Active",
-          },
-        ]);
         showToast("Brand added", "success");
         if (closeModal) closeModal();
+        // ✅ REFRESH FROM SERVER
+        const res = await callApi("getBrands", {});
+        setBrands((res.brands || []).map(mapBrandFromApi));
       } catch (err) {
         showToast(err.message, "error");
       }
@@ -383,39 +348,24 @@ export function useAppHandlers(state) {
     [setBrands, showToast, closeModal, form, modal],
   );
 
-  //7. ── SUBSCRIPTION HANDLERS ──────────────────────────────────────────────
+  // 7. Subscription Handlers
   const saveSubscription = useCallback(
     async (data) => {
       try {
         const payload = { ...data };
-
-        // If editing, we must pass the expectedVersion for Optimistic Concurrency Control
         if (data.id) {
           payload.expectedVersion = data.version;
         } else {
-          // If creating, pass an idempotencyKey to prevent duplicate network retries
           payload.idempotencyKey = `sub-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
         }
 
-        const res = await callApi("saveSubscription", payload);
-
-        if (data.id) {
-          // Update existing
-          setSubscriptions((prev) =>
-            prev.map((s) =>
-              s.id === data.id ? { ...s, ...data, version: res.newVersion } : s,
-            ),
-          );
-        } else {
-          // Append new
-          setSubscriptions((prev) => [
-            ...prev,
-            { ...data, id: res.id, version: res.newVersion },
-          ]);
-        }
-
+        await callApi("saveSubscription", payload);
         showToast("Subscription saved", "success");
         if (closeModal) closeModal();
+        
+        // ✅ REFRESH FROM SERVER
+        const res = await callApi("getSubscriptions", {});
+        setSubscriptions((res.subscriptions || []).map(mapSubscriptionFromApi));
       } catch (err) {
         showToast(err.message || "Failed to save subscription", "error");
       }
@@ -426,14 +376,12 @@ export function useAppHandlers(state) {
   const generateDailyLogs = useCallback(
     async (date) => {
       try {
-        // Generate a unique idempotency key for this batch run
         const idempotencyKey = `gen-logs-${date}-${Date.now()}`;
         const summary = await callApi("generateDailyLogsForDate", {
           date,
           idempotencyKey,
         });
 
-        // Show a detailed toast based on the backend summary
         const skipped =
           (summary.skippedExisting || 0) +
           (summary.skippedPaused || 0) +
@@ -445,7 +393,6 @@ export function useAppHandlers(state) {
           summary.created > 0 ? "success" : "info",
         );
 
-        // Crucial: Refetch the logs for that specific date so the Delivery UI updates immediately
         if (state.fetchLogs) {
           await state.fetchLogs(date);
         }
@@ -456,15 +403,15 @@ export function useAppHandlers(state) {
     [showToast, state],
   );
 
-  // 8. Bill lifecycle — used by the Lock / Unlock buttons on the Billing tab
+  // 8. Bill lifecycle
   const lockBill = useCallback(
     async (billId) => {
       try {
         await callApi("lockBill", { billId });
-        setBills((prev) =>
-          prev.map((b) => (b.id === billId ? { ...b, locked: true } : b)),
-        );
         showToast("Bill locked", "success");
+        // ✅ REFRESH FROM SERVER
+        const res = await callApi("getBills", {});
+        setBills((res.bills || []).map(mapBillFromApi));
       } catch (err) {
         showToast(err.message, "error");
       }
@@ -476,10 +423,10 @@ export function useAppHandlers(state) {
     async (billId) => {
       try {
         await callApi("unlockBill", { billId });
-        setBills((prev) =>
-          prev.map((b) => (b.id === billId ? { ...b, locked: false } : b)),
-        );
         showToast("Bill unlocked", "success");
+        // ✅ REFRESH FROM SERVER
+        const res = await callApi("getBills", {});
+        setBills((res.bills || []).map(mapBillFromApi));
       } catch (err) {
         showToast(err.message, "error");
       }
@@ -487,9 +434,7 @@ export function useAppHandlers(state) {
     [setBills, showToast],
   );
 
-  // 9. WhatsApp share — fetches the bill text and opens wa.me in a new tab.
-  //    Falls back to a plain text message if getBillText fails so the link is
-  //    always usable even when the network is flaky.
+  // 9. WhatsApp share
   const whatsapp = useCallback(
     async (phone, billId) => {
       if (!phone) {
@@ -508,7 +453,7 @@ export function useAppHandlers(state) {
           const data = await callApi("getBillText", { billId });
           if (data?.text) text = data.text;
         } catch {
-          // keep the fallback text — wa.me link still works
+          // keep the fallback text
         }
       }
       const url = `https://wa.me/${intlPhone}?text=${encodeURIComponent(text)}`;
@@ -562,45 +507,45 @@ export function useAppHandlers(state) {
     [showToast],
   );
 
-  // ── IMPORT LIFECYCLE (Fixes F1) ─────────────────────────────────────────
+  // 10. Import Lifecycle
   const confirmMilkImport = useCallback(
     async (importId) => {
       try {
         await callApi("confirmMilkImport", { importId });
         showToast("Import confirmed", "success");
-        // Refetch to get the true server state (Fixes F11 optimistic drift)
+        // ✅ REFRESH FROM SERVER
         const res = await callApi("getMilkImports", {});
         setImports((res.imports || []).map(mapImportFromApi));
       } catch (err) {
         showToast(err.message || "Failed to confirm import", "error");
       }
     },
-    [showToast, setImports],
+    [showToast, setImports], // ✅ Added showToast to deps
   );
 
   const deleteMilkImport = useCallback(
     async (importId) => {
       try {
-        // Assuming backend has deleteMilkImport, or uses updateMilkImport with status='DELETED'
         await callApi("deleteMilkImport", { importId });
         showToast("Import deleted", "success");
+        // ✅ REFRESH FROM SERVER
         const res = await callApi("getMilkImports", {});
         setImports((res.imports || []).map(mapImportFromApi));
       } catch (err) {
         showToast(err.message || "Failed to delete import", "error");
       }
     },
-    [showToast, setImports],
+    [showToast, setImports], // ✅ Added showToast to deps
   );
 
-  // ── ADJUSTMENT LIFECYCLE (Fixes F2) ─────────────────────────────────────
+  // 11. Adjustment Lifecycle
   const applyAdjustment = useCallback(
     async (adjustmentId, billId) => {
       try {
         await callApi("applyAdjustment", { adjustmentId, billId });
         showToast("Adjustment applied", "success");
 
-        // Refetch adjustments and bills since the adjustment affects the bill total
+        // ✅ REFRESH BOTH ADJUSTMENTS AND BILLS FROM SERVER
         const [adjRes, billRes] = await Promise.all([
           callApi("getAdjustments", {}),
           callApi("getBills", {}),

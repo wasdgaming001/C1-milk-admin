@@ -8,8 +8,7 @@ export default defineConfig({
     globals: true,
     include: [
       "src/**/*.test.{js,jsx}",
-      "public/**/*.test.{js,jsx}",
-      "netlify/**/*.test.{js,jsx}",
+      "functions/**/*.test.{js,jsx}",
     ],
     coverage: {
       provider: "v8",

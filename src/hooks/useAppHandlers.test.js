@@ -8,16 +8,42 @@ vi.mock("react", () => ({
   useEffect: () => {},
 }));
 
-vi.mock("../lib/api.js", () => ({
-  callApi: vi.fn().mockResolvedValue({
-    success: true,
-    data: { customer: { id: "C123" }, amountPaid: 100, status: "Paid" },
-  }),
-  mapCustomerToApi: (form) => form,
-  mapImportToApi: (form) => form,
-  mapPaymentToApi: (id, amt) => ({ billId: id, amountPaid: amt }),
-  mapBillFromApi: (b) => b,
-}));
+// ✅ UPDATED: Dynamic mock for callApi and all required mappers
+vi.mock("../lib/api.js", () => {
+  const callApiMock = vi.fn((action) => {
+    // Handle the new "Refetch-from-Server" pattern
+    if (action === "getAdjustments") return Promise.resolve({ adjustments: [] });
+    if (action === "getBills") return Promise.resolve({ bills: [] });
+    if (action === "getCustomers") return Promise.resolve({ customers: [] });
+    if (action === "getMilkImports") return Promise.resolve({ imports: [] });
+    if (action === "getDailyLogs") return Promise.resolve({ logs: [] });
+    if (action === "getBrands") return Promise.resolve({ brands: [] });
+    if (action === "getPauses") return Promise.resolve({ pauses: [] });
+    if (action === "getSubscriptions") return Promise.resolve({ subscriptions: [] });
+
+    // Default response for create/update actions
+    return Promise.resolve({
+      success: true,
+      data: { customer: { id: "C123" }, amountPaid: 100, status: "Paid" },
+    });
+  });
+
+  return {
+    callApi: callApiMock,
+    // Mappers used by useAppHandlers.js (identity functions for testing)
+    mapCustomerToApi: (form) => form,
+    mapImportToApi: (form) => form,
+    mapPaymentToApi: (id, amt) => ({ billId: id, amountPaid: amt }),
+    mapBillFromApi: (b) => b,
+    mapCustomerFromApi: (c) => c,
+    mapImportFromApi: (i) => i,
+    mapLogFromApi: (l) => l,
+    mapAdjustmentFromApi: (a) => a,
+    mapPauseFromApi: (p) => p,
+    mapBrandFromApi: (b) => b,
+    mapSubscriptionFromApi: (s) => s,
+  };
+});
 
 function createMockHandlers(overrides = {}) {
   const defaults = {
@@ -34,10 +60,13 @@ function createMockHandlers(overrides = {}) {
     setAdjustments: vi.fn(),
     setPauses: vi.fn(),
     setBrands: vi.fn(),
+    setSubscriptions: vi.fn(), // ✅ Added for subscription handlers
     setQueue: vi.fn(),
     today: "2025-01-15",
     billMonth: "2025-01",
     activeC: [],
+    fetchLogs: vi.fn(), // ✅ Added for generateDailyLogs
+    refresh: vi.fn(),   // ✅ Added for addCreditNote
   };
   // eslint-disable-next-line react-hooks/rules-of-hooks
   return useAppHandlers({ ...defaults, ...overrides });

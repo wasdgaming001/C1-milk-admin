@@ -11,14 +11,14 @@
   //   public/sw.js             — registered at runtime via
   //                              navigator.serviceWorker.register('/sw.js')
   //                              in public/app.js
-  //   netlify/functions/proxy.js — a Netlify Function, reached via the
-  //                              netlify.toml redirect /api -> proxy
+// functions/api.js — a Cloudflare Pages Function, handling /api requests
+  //                              public/_headers redirect /api -> proxy
   "entry": [
     "public/sw.js",
     "functions/api.js",
-    "functions/tests/proxy-test.js",
+    "functions/tests/proxy-test.js"
   ],
   "duplicates": {
-    "ignore": ["dup:c53e2f4f", "functions/**", "dist/**", "node_modules/**"],
-  },
+    "ignore": ["dup:c53e2f4f", "functions/**", "dist/**", "node_modules/**"]
+  }
 }

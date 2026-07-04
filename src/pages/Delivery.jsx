@@ -1,6 +1,8 @@
 // ── Delivery.jsx ──────────────────────────────────────────────────────────────
 // Daily Delivery tab: pick a date, see scheduled + done counts, toggle each
 // entry's delivered/skipped state.
+import { useEffect } from "react";
+import { useMemo } from "react";
 import { useBusy } from "../hooks/useBusy.js";
 import {
   Card,
@@ -10,9 +12,8 @@ import {
   StatGrid,
   Empty,
   Badge,
-  Btn, // 👈 Added Btn import for the automation button
+  Btn, 
 } from "../components/ui.jsx";
-import { useEffect } from "react";
 
 function calculateDeliveryStats(todayLogs) {
   const delivered = todayLogs.filter((l) => l.delivered);
@@ -49,7 +50,17 @@ export default function Delivery({
   fetchLogs,
   generateDailyLogs,
   onOpenModal,
+  customers = [],
 }) {
+  // ✅ Create a fast lookup map for customers
+  const customerMap = useMemo(() => {
+    const map = {};
+    customers.forEach((c) => {
+      map[c.id] = c;
+    });
+    return map;
+  }, [customers]);
+
   const stats = calculateDeliveryStats(todayLogs);
 
   // Re-fetch logs whenever the user picks a new date
@@ -160,6 +171,16 @@ export default function Delivery({
                 alignItems: "center",
               }}
             >
+              <div>
+                {/* ✅ Resolved Customer Name */}
+                <div style={{ fontWeight: 600, fontSize: 13, color: "#111" }}>
+                  {customerMap[l.custId]?.name || "Unknown Customer"}
+                </div>
+                {/* ✅ Resolved Product and Qty */}
+                <div style={{ fontSize: 12, color: "#6b7280" }}>
+                  {l.product || customerMap[l.custId]?.product || "Milk"} · {l.qty}L
+                </div>
+              </div>
               <div>
                 <div style={{ fontWeight: 600, fontSize: 13, color: "#111" }}>
                   {l.customer}

@@ -56,6 +56,7 @@ export function mapLogFromApi(l) {
     source: l.source || "SUBSCRIPTION",
     reason: l.reason || "",
     qty: Number(l.quantity || l.qty || 0),
+    product: l.product || l.milkType || "",
   };
 }
 
@@ -63,6 +64,8 @@ export function mapAdjustmentFromApi(a) {
   return {
     id: a.adjustmentId,
     billId: a.billId,
+    custId: a.customerId,
+    applied: !!a.applied,
     reason: a.reason,
     amount: a.amount,
     date: a.date,

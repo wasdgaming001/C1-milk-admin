@@ -31,7 +31,7 @@ export default defineConfig([
 
   // Netlify serverless functions — Node environment
   {
-    files: ["netlify/functions/**/*.js"],
+    files: ["functions/**/*.js"],
     extends: [js.configs.recommended],
     languageOptions: {
       globals: globals.node,
