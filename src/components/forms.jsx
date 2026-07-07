@@ -503,7 +503,7 @@ export function PauseModal({
         dateKey="startDate"
         dateLabel="Start Date *"
       />
-      
+
       {/* ✅ End Date field with the typo fixed */}
       <Field label="End Date" error={endError}>
         <input
@@ -511,8 +511,8 @@ export function PauseModal({
           value={form.endDate || ""}
           onChange={onChange("endDate")} // ✅ FIXED: Changed from onFieldChange to onChange
           min={form.startDate || ""}
-          aria-invalid={!!endError} 
-          style={IS()} 
+          aria-invalid={!!endError}
+          style={IS()}
         />
       </Field>
 

@@ -63,8 +63,8 @@ function renderImports(state, handlers) {
       impFilter={state.impFilter}
       onImpFilterChange={state.setImpFilter}
       onOpenModal={state.openModal}
-      onConfirm={handlers.confirmMilkImport} 
-      onDelete={handlers.deleteMilkImport}   
+      onConfirm={handlers.confirmMilkImport}
+      onDelete={handlers.deleteMilkImport}
     />
   );
 }

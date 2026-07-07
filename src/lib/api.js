@@ -51,7 +51,7 @@ export function mapLogFromApi(l) {
     id: l.logId,
     custId: l.customerId,
     date: l.date,
-    delivered: !!l.delivered, 
+    delivered: !!l.delivered,
     status: l.status,
     source: l.source || "SUBSCRIPTION",
     reason: l.reason || "",
@@ -87,9 +87,9 @@ export function mapBrandFromApi(b) {
     id: b.brandId,
     name: b.brandName,
     status: b.status,
-    supplier: b.supplierName,      
-    phone: b.supplierPhone,        
-    defaultMilkType: b.defaultMilkType, 
+    supplier: b.supplierName,
+    phone: b.supplierPhone,
+    defaultMilkType: b.defaultMilkType,
     rate: b.ratePerLiter,
   };
 }
@@ -140,7 +140,7 @@ export function mapCustomerToApi(form) {
 }
 
 export function mapImportToApi(form) {
-  return {
+  const out = {
     brandName: form.brand,
     milkType: form.type,
     quantity: Number(form.qty),
@@ -149,14 +149,15 @@ export function mapImportToApi(form) {
     invoiceNumber: form.invoice,
     supplierName: form.supplier,
     date: form.date,
-    idempotencyKey: generateKey(),
   };
+
   if (form.id) {
     out.id = form.id;
     out.expectedVersion = form.version;
   } else {
     out.idempotencyKey = generateKey();
   }
+
   return out;
 }
 
@@ -205,7 +206,8 @@ export async function callApi(action, payload = {}) {
     const result = await response.json();
 
     if (!result.success) {
-      const errorCode = result.error?.code || result.error?.status || result.error;
+      const errorCode =
+        result.error?.code || result.error?.status || result.error;
       // 401 Interceptor: If backend rejects token, force logout.
       if (
         errorCode === "UNAUTHORIZED" ||

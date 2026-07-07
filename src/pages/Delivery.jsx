@@ -2,14 +2,7 @@
 import { useEffect } from "react";
 import { useMemo } from "react";
 import { useBusy } from "../hooks/useBusy.js";
-import {
-  Card,
-  Field,
-  IS,
-  StatGrid,
-  Empty,
-  Btn,
-} from "../components/ui.jsx";
+import { Card, Field, IS, StatGrid, Empty, Btn } from "../components/ui.jsx";
 
 function calculateDeliveryStats(todayLogs) {
   const delivered = todayLogs.filter((l) => l.delivered);
@@ -90,7 +83,10 @@ export default function Delivery({
   }, [customers]);
 
   // ✅ The arrow function now has a cyclomatic complexity of 1, dropping CRAP to near 0
-  const resolvedLogs = useMemo(() => todayLogs.map(l => resolveLog(l, customerMap)), [todayLogs, customerMap]);
+  const resolvedLogs = useMemo(
+    () => todayLogs.map((l) => resolveLog(l, customerMap)),
+    [todayLogs, customerMap],
+  );
 
   const stats = calculateDeliveryStats(todayLogs);
 
@@ -120,10 +116,17 @@ export default function Delivery({
           </Field>
 
           <div className="flex gap-2 flex-wrap">
-            <Btn onClick={handleGenerate} disabled={busy} className="flex-1 sm:flex-none">
+            <Btn
+              onClick={handleGenerate}
+              disabled={busy}
+              className="flex-1 sm:flex-none"
+            >
               {busy ? "⏳ Generating..." : "⚡ Generate Deliveries"}
             </Btn>
-            <Btn onClick={() => onOpenModal("addAdHoc")} style={{ whiteSpace: "nowrap" }}>
+            <Btn
+              onClick={() => onOpenModal("addAdHoc")}
+              style={{ whiteSpace: "nowrap" }}
+            >
               + Extra Delivery
             </Btn>
           </div>

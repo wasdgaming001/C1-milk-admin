@@ -27,7 +27,7 @@ export function useAppHandlers(state) {
     setAdjustments,
     setBrands,
     setSubscriptions,
-    setPauses, 
+    setPauses,
     toast$,
     closeModal,
     form = {},
@@ -39,7 +39,16 @@ export function useAppHandlers(state) {
 
   // ── Shared Action Helpers ───────────────────────────────────────────────
   const handleFormAction = useCallback(
-    async (action, formArg, successMsg, mapToApi, getList, setList, mapFromApi, resKey) => {
+    async (
+      action,
+      formArg,
+      successMsg,
+      mapToApi,
+      getList,
+      setList,
+      mapFromApi,
+      resKey,
+    ) => {
       const f = formArg || form;
       try {
         const payload = mapToApi(f);
@@ -56,7 +65,17 @@ export function useAppHandlers(state) {
   );
 
   const handleIdAction = useCallback(
-    async (action, idKey, id, successMsg, getList, setList, mapFromApi, resKey, fallbackErrMsg) => {
+    async (
+      action,
+      idKey,
+      id,
+      successMsg,
+      getList,
+      setList,
+      mapFromApi,
+      resKey,
+      fallbackErrMsg,
+    ) => {
       try {
         await callApi(action, { [idKey]: id });
         showToast(successMsg, "success");
@@ -81,7 +100,7 @@ export function useAppHandlers(state) {
           "getCustomers",
           setCustomers,
           mapCustomerFromApi,
-          "customers"
+          "customers",
         ),
       updateCustomer: async (formArg) =>
         handleFormAction(
@@ -92,7 +111,7 @@ export function useAppHandlers(state) {
           "getCustomers",
           setCustomers,
           mapCustomerFromApi,
-          "customers"
+          "customers",
         ),
     }),
     [setCustomers, handleFormAction],
@@ -121,7 +140,11 @@ export function useAppHandlers(state) {
           return;
         }
         try {
-          const payload = mapPaymentToApi(billId, amount, { mode: form.payMode, date: form.payDate, note: form.payNote });
+          const payload = mapPaymentToApi(billId, amount, {
+            mode: form.payMode,
+            date: form.payDate,
+            note: form.payNote,
+          });
           await callApi("recordPayment", payload);
           showToast(`₹${amount} recorded`, "success");
           if (closeModal) closeModal();
@@ -135,7 +158,9 @@ export function useAppHandlers(state) {
 
       generateMonthlyBills: async (month) => {
         try {
-          const activeCustomers = customers.filter((c) => c.status === "Active");
+          const activeCustomers = customers.filter(
+            (c) => c.status === "Active",
+          );
           for (const c of activeCustomers) {
             await callApi("generateMonthBill", {
               customerId: c.id,
@@ -152,7 +177,11 @@ export function useAppHandlers(state) {
       },
 
       saveAdjustment: async (billIdArg, amountArg, reasonArg) => {
-        const { billId, amount, reason } = getAdjustmentData(billIdArg, amountArg, reasonArg);
+        const { billId, amount, reason } = getAdjustmentData(
+          billIdArg,
+          amountArg,
+          reasonArg,
+        );
         const customerId = form.custId || modal.data?.custId || billId;
         if (!billId || !amount || !reason) {
           showToast("Fill all fields", "error");
@@ -191,7 +220,7 @@ export function useAppHandlers(state) {
           "getMilkImports",
           setImports,
           mapImportFromApi,
-          "imports"
+          "imports",
         ),
       updateMilkImport: async (formArg) =>
         handleFormAction(
@@ -202,7 +231,7 @@ export function useAppHandlers(state) {
           "getMilkImports",
           setImports,
           mapImportFromApi,
-          "imports"
+          "imports",
         ),
     }),
     [setImports, handleFormAction],
@@ -213,7 +242,7 @@ export function useAppHandlers(state) {
     () => ({
       toggleDeliveryLog: async (logId, delivered) => {
         try {
-          const viewDate = state.logDate || getToday();
+          // FIX: Removed unused `viewDate` variable which also resolved the missing dependency warning
           const payload = {
             logId,
             delivered,
@@ -223,7 +252,9 @@ export function useAppHandlers(state) {
           await callApi("updateLogEntry", payload);
           showToast("Log updated", "success");
           // ✅ REFRESH FROM SERVER
-          const res = await callApi("getDailyLogs", { date: logDate || getToday() });
+          const res = await callApi("getDailyLogs", {
+            date: logDate || getToday(),
+          });
           setLogs((res.logs || []).map(mapLogFromApi));
         } catch (e) {
           showToast(e.message, "error");
@@ -427,12 +458,35 @@ export function useAppHandlers(state) {
     [showToast, state],
   );
 
-   // 8. Bill lifecycle
+  // 8. Bill lifecycle
   // ✅ Combined into a single useMemo to eliminate the 9-line duplication between lock and unlock
-  const billLockHandlers = useMemo(() => ({
-    lockBill: (billId) => handleIdAction("lockBill", "billId", billId, "Bill locked", "getBills", setBills, mapBillFromApi, "bills"),
-    unlockBill: (billId) => handleIdAction("unlockBill", "billId", billId, "Bill unlocked", "getBills", setBills, mapBillFromApi, "bills"),
-  }), [handleIdAction, setBills]);
+  const billLockHandlers = useMemo(
+    () => ({
+      lockBill: (billId) =>
+        handleIdAction(
+          "lockBill",
+          "billId",
+          billId,
+          "Bill locked",
+          "getBills",
+          setBills,
+          mapBillFromApi,
+          "bills",
+        ),
+      unlockBill: (billId) =>
+        handleIdAction(
+          "unlockBill",
+          "billId",
+          billId,
+          "Bill unlocked",
+          "getBills",
+          setBills,
+          mapBillFromApi,
+          "bills",
+        ),
+    }),
+    [handleIdAction, setBills],
+  );
 
   // 9. WhatsApp share
   const whatsapp = useCallback(
@@ -508,7 +562,7 @@ export function useAppHandlers(state) {
     [showToast],
   );
 
-      // 10. Import Lifecycle
+  // 10. Import Lifecycle
   // ✅ Shared helper to eliminate the 9-line duplication between confirm and delete
   const handleImportAction = useCallback(
     async (action, importId, successMsg, fallbackErrMsg) => {
@@ -526,12 +580,24 @@ export function useAppHandlers(state) {
 
   // ✅ These remain as useCallbacks to preserve the final return block's contract
   const confirmMilkImport = useCallback(
-    async (importId) => handleImportAction("confirmMilkImport", importId, "Import confirmed", "Failed to confirm import"),
+    async (importId) =>
+      handleImportAction(
+        "confirmMilkImport",
+        importId,
+        "Import confirmed",
+        "Failed to confirm import",
+      ),
     [handleImportAction],
   );
 
   const deleteMilkImport = useCallback(
-    async (importId) => handleImportAction("deleteMilkImport", importId, "Import deleted", "Failed to delete import"),
+    async (importId) =>
+      handleImportAction(
+        "deleteMilkImport",
+        importId,
+        "Import deleted",
+        "Failed to delete import",
+      ),
     [handleImportAction],
   );
 
@@ -556,7 +622,7 @@ export function useAppHandlers(state) {
     [showToast, setAdjustments, setBills],
   );
 
-    return useMemo(
+  return useMemo(
     () => ({
       ...customerHandlers,
       ...billingHandlers,

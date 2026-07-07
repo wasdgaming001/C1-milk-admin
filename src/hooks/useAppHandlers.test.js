@@ -1,20 +1,21 @@
-
 import { describe, it, expect, vi } from "vitest";
 import { useAppHandlers } from "./useAppHandlers";
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act } from "@testing-library/react";
 
 // ✅ UPDATED: Dynamic mock for callApi and all required mappers
 vi.mock("../lib/api.js", () => {
   const callApiMock = vi.fn((action) => {
     // Handle the new "Refetch-from-Server" pattern
-    if (action === "getAdjustments") return Promise.resolve({ adjustments: [] });
+    if (action === "getAdjustments")
+      return Promise.resolve({ adjustments: [] });
     if (action === "getBills") return Promise.resolve({ bills: [] });
     if (action === "getCustomers") return Promise.resolve({ customers: [] });
     if (action === "getMilkImports") return Promise.resolve({ imports: [] });
     if (action === "getDailyLogs") return Promise.resolve({ logs: [] });
     if (action === "getBrands") return Promise.resolve({ brands: [] });
     if (action === "getPauses") return Promise.resolve({ pauses: [] });
-    if (action === "getSubscriptions") return Promise.resolve({ subscriptions: [] });
+    if (action === "getSubscriptions")
+      return Promise.resolve({ subscriptions: [] });
 
     // Default response for create/update actions
     return Promise.resolve({
@@ -63,9 +64,11 @@ function createMockHandlers(overrides = {}) {
     fetchLogs: vi.fn(),
     refresh: vi.fn(),
   };
-  
+
   // ✅ FIXED: Use renderHook to properly test React hooks without breaking rules
-  const { result } = renderHook(() => useAppHandlers({ ...defaults, ...overrides }));
+  const { result } = renderHook(() =>
+    useAppHandlers({ ...defaults, ...overrides }),
+  );
   return result.current;
 }
 

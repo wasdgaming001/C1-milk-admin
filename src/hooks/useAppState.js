@@ -31,14 +31,14 @@ function useAppUi() {
 
   const toast$ = useCallback((msg, type = "info") => {
     const id = ++toastIdRef.current;
-    
+
     // ✅ Stop the timer if a new toast replaces the old one
     if (toastTimerRef.current) {
       clearTimeout(toastTimerRef.current);
     }
-    
+
     setToast({ id, msg, type });
-    
+
     // Schedule the new timeout and store its ID
     toastTimerRef.current = setTimeout(() => {
       setToast((curr) => (curr && curr.id === id ? null : curr));
@@ -59,7 +59,7 @@ function useAppUi() {
     setModal({ type, data });
     setForm(data);
   }, []);
-  
+
   const closeModal = useCallback(() => {
     setModal(null);
     setForm({});

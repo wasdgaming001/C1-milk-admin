@@ -25,7 +25,7 @@
  * evicts the old cache on the next visit.
  * ============================================================================ */
 
-const CACHE = "milk-v20"; 
+const CACHE = "milk-v20";
 const SHELL = [
   "/",
   "/index.html",
@@ -131,7 +131,7 @@ self.addEventListener("activate", (e) => {
 // ── Fetch: routing strategy ───────────────────────────────────────────────────
 function _isApiCall(url) {
   const path = new URL(url).pathname;
-   return path.startsWith("/api");
+  return path.startsWith("/api");
 }
 
 async function _fetchAndCache(request) {

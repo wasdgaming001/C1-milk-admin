@@ -1,4 +1,4 @@
-import { cleanPhone  } from "../utils.js";
+import { cleanPhone } from "../utils.js";
 
 export function validateCustomerForm(form) {
   if (!form.name?.trim()) return "Name is required";
@@ -7,4 +7,3 @@ export function validateCustomerForm(form) {
     return "Enter valid 10-digit phone";
   return null;
 }
-
