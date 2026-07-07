@@ -51,7 +51,7 @@ export function mapLogFromApi(l) {
     id: l.logId,
     custId: l.customerId,
     date: l.date,
-    delivered: l.status === "DELIVERED", // Adjust based on your actual status logic
+    delivered: !!l.delivered, 
     status: l.status,
     source: l.source || "SUBSCRIPTION",
     reason: l.reason || "",
@@ -87,6 +87,10 @@ export function mapBrandFromApi(b) {
     id: b.brandId,
     name: b.brandName,
     status: b.status,
+    supplier: b.supplierName,      
+    phone: b.supplierPhone,        
+    defaultMilkType: b.defaultMilkType, 
+    rate: b.ratePerLiter,
   };
 }
 
@@ -147,12 +151,22 @@ export function mapImportToApi(form) {
     date: form.date,
     idempotencyKey: generateKey(),
   };
+  if (form.id) {
+    out.id = form.id;
+    out.expectedVersion = form.version;
+  } else {
+    out.idempotencyKey = generateKey();
+  }
+  return out;
 }
 
-export function mapPaymentToApi(billId, amount) {
+export function mapPaymentToApi(billId, amount, opts = {}) {
   return {
     billId,
-    amountPaid: Number(amount),
+    amount: Number(amount),
+    mode: opts.mode || "Cash",
+    date: opts.date,
+    note: opts.note,
     idempotencyKey: generateKey(),
   };
 }

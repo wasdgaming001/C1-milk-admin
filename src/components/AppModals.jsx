@@ -17,11 +17,11 @@ import {
 function renderCustomerModal(ctx, isEdit) {
   return (
     <CustomerModal
-      data={ctx.modal.data}
       form={ctx.form}
-      isEdit={isEdit}
+      data={ctx.modal.data}
       onChange={ctx.setF}
       onSave={ctx.handlers.saveCustomer}
+      isEdit={isEdit}
       onClose={ctx.closeModal}
       products={PRODUCTS}
     />
@@ -31,8 +31,8 @@ function renderCustomerModal(ctx, isEdit) {
 function renderImportModal(ctx) {
   return (
     <ImportModal
-      data={ctx.modal.data}
       form={ctx.form}
+      data={ctx.modal.data}
       onChange={ctx.setF}
       onSave={ctx.handlers.saveImport}
       onClose={ctx.closeModal}
@@ -46,8 +46,8 @@ function renderImportModal(ctx) {
 function renderPaymentModal(ctx) {
   return (
     <PaymentModal
-      data={ctx.modal.data}
       form={ctx.form}
+      data={ctx.modal.data}
       onChange={ctx.setF}
       onSave={ctx.handlers.recordPayment}
       onClose={ctx.closeModal}
@@ -61,8 +61,8 @@ function renderPaymentModal(ctx) {
 function renderAdjustmentModal(ctx) {
   return (
     <AdjustmentModal
-      data={ctx.modal.data}
       form={ctx.form}
+      data={ctx.modal.data}
       onChange={ctx.setF}
       onSave={ctx.handlers.saveAdjustment}
       onClose={ctx.closeModal}
@@ -75,8 +75,8 @@ function renderAdjustmentModal(ctx) {
 function renderPauseModal(ctx) {
   return (
     <PauseModal
-      data={ctx.modal.data}
       form={ctx.form}
+      data={ctx.modal.data}
       onChange={ctx.setF}
       onSave={ctx.handlers.savePause}
       onClose={ctx.closeModal}
@@ -89,8 +89,8 @@ function renderPauseModal(ctx) {
 function renderSubscriptionModal(ctx) {
   return (
     <SubscriptionModal
-      data={ctx.modal.data}
       form={ctx.form}
+      data={ctx.modal.data}
       onChange={ctx.setF}
       // Merge form data with ID/Version for Optimistic Concurrency Control if editing
       onSave={() =>

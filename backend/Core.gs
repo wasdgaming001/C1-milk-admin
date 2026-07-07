@@ -789,7 +789,7 @@ const TESTED_ACTIONS = new Set([
 ]);
 
 // Actions that do NOT require a valid session token (public/bootstrap actions)
-const PUBLIC_ACTIONS = new Set(["verifyPIN", "rotatePIN", "healthCheck"]);
+const PUBLIC_ACTIONS = new Set(["verifyPIN", "healthCheck"]);
 
 // ----------------------------------------------------------------------------
 // 13. ROUTER — doPost is the single entry point the Netlify proxy calls.
@@ -927,11 +927,11 @@ function doPost(e) {
       case "getDailyInventory":
         return getDailyInventory(payload);
       case "getAdjustments":
-        return Billing.getAdjustments();
+        return getAdjustments();
       case "getPauses":
-        return Customers.getPauses();
+        return getPauses();
       case "getBrands":
-        return MilkImports.getBrands();
+        return getBrands();
       case "reconcileMilkInventory":
         return reconcileMilkInventory(payload);
       case "addMilkBrand":

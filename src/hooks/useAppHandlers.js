@@ -27,11 +27,12 @@ export function useAppHandlers(state) {
     setAdjustments,
     setBrands,
     setSubscriptions,
-    setPauses, // ✅ Added for refetching pauses
+    setPauses, 
     toast$,
     closeModal,
     form = {},
     modal = {},
+    logDate,
   } = state;
 
   const showToast = useCallback((msg, type) => toast$(msg, type), [toast$]);
@@ -120,7 +121,7 @@ export function useAppHandlers(state) {
           return;
         }
         try {
-          const payload = mapPaymentToApi(billId, amount);
+          const payload = mapPaymentToApi(billId, amount, { mode: form.payMode, date: form.payDate, note: form.payNote });
           await callApi("recordPayment", payload);
           showToast(`₹${amount} recorded`, "success");
           if (closeModal) closeModal();
@@ -152,15 +153,17 @@ export function useAppHandlers(state) {
 
       saveAdjustment: async (billIdArg, amountArg, reasonArg) => {
         const { billId, amount, reason } = getAdjustmentData(billIdArg, amountArg, reasonArg);
+        const customerId = form.custId || modal.data?.custId || billId;
         if (!billId || !amount || !reason) {
           showToast("Fill all fields", "error");
           return;
         }
         try {
           const payload = {
-            billId,
+            customerId,
             amount: Number(amount),
             reason,
+            date: form.date || getToday(),
             idempotencyKey: Date.now().toString(),
           };
           await callApi("addAdjustment", payload);
@@ -210,16 +213,17 @@ export function useAppHandlers(state) {
     () => ({
       toggleDeliveryLog: async (logId, delivered) => {
         try {
+          const viewDate = state.logDate || getToday();
           const payload = {
             logId,
             delivered,
-            date: getToday(),
+            date: logDate || getToday(),
             idempotencyKey: Date.now().toString(),
           };
           await callApi("updateLogEntry", payload);
           showToast("Log updated", "success");
           // ✅ REFRESH FROM SERVER
-          const res = await callApi("getDailyLogs", { date: getToday() });
+          const res = await callApi("getDailyLogs", { date: logDate || getToday() });
           setLogs((res.logs || []).map(mapLogFromApi));
         } catch (e) {
           showToast(e.message, "error");
@@ -241,7 +245,7 @@ export function useAppHandlers(state) {
         }
       },
     }),
-    [setLogs, showToast],
+    [setLogs, showToast, logDate],
   );
 
   // 5. Admin / Misc Handlers
