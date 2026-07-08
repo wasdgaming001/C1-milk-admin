@@ -1,33 +1,16 @@
-// ── Dashboard.jsx ─────────────────────────────────────────────────────────────
-// Home tab: KPI tiles + today's delivery snapshot + quick actions + queue
-// status + recent bills.
-
+import { Card, StatGrid, Btn, Section, Empty, Badge } from "../components/ui.jsx";
+import { UserPlus, Package, Receipt, Scale, PauseCircle, Tag, ArrowRight, Calendar, CheckCircle, XCircle, Droplet } from "lucide-react";
 import { fmt } from "../lib/utils.js";
-import { BLUE, BLUE_L } from "../lib/constants.js";
-import { Card, StatGrid, Btn, Badge } from "../components/ui.jsx";
+
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const QUICK_ACTIONS = [
-  { label: "Add Customer", icon: "👤", type: "addCustomer" },
-  { label: "Add Import", icon: "📦", type: "addImport" },
-  { label: "Generate Bills", icon: "🧾", action: "generate" },
-  { label: "Add Adjustment", icon: "⚖️", type: "addAdj" },
-  { label: "Add Pause", icon: "⏸️", type: "addPause" },
-  { label: "Add Brand", icon: "🏷️", type: "addBrand" },
-];
-
-const MONTH_NAMES = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
+  { label: "Add Customer", icon: UserPlus, type: "addCustomer" },
+  { label: "Add Import", icon: Package, type: "addImport" },
+  { label: "Generate Bills", icon: Receipt, action: "generate" },
+  { label: "Adjustment", icon: Scale, type: "addAdj" },
+  { label: "Add Pause", icon: PauseCircle, type: "addPause" },
+  { label: "Add Brand", icon: Tag, type: "addBrand" },
 ];
 
 // fallow-ignore-next-line complexity
@@ -38,205 +21,72 @@ function monthLabel(YYYYMM) {
   return MONTH_NAMES[monthIdx];
 }
 
-export default function Dashboard({
-  today,
-  activeC,
-  pendingDues,
-  confirmedStock,
-  todayLogs = [],
-  bills = [],
-  customers = [],
-  onSetTab,
-  onOpenModal,
-  onGenerateBill,
-}) {
-  // The previous version of this tile said "Revenue Jan" while summing paid
-  // bills across ALL months — label was a lie. Now scoped to the calendar
-  // month of `today` so the number and label always agree.
-  const currentMonth = (today || "").substring(0, 7);
-  const monthRevenue = bills
-    .filter((b) => b.month === currentMonth && b.status === "Paid")
-    .reduce((s, b) => s + (b.paid || 0), 0);
-
-  // bill.custId → customer.name lookup so Recent Bills can show who paid.
+export default function Dashboard({ today, todayLogs = [], bills = [], customers = [], onSetTab, onOpenModal, onGenerateBill }) {
   const customerName = (() => {
     const m = new Map();
     for (const c of customers) m.set(c.id, c.name);
     return (id) => m.get(id) || "Unknown Customer";
   })();
 
+  const deliveredCount = todayLogs.filter((l) => l.delivered).length;
+  const skippedCount = todayLogs.filter((l) => !l.delivered).length;
+  const totalLiters = todayLogs.filter((l) => l.delivered).reduce((s, l) => s + l.qty, 0).toFixed(1);
+
   return (
-    <div>
-      <StatGrid
-        items={[
-          { label: "Active Customers", value: activeC.length, icon: "👥" },
-          {
-            label: "Stock Confirmed",
-            value: confirmedStock + " L",
-            icon: "🥛",
-          },
-          {
-            label: `Revenue ${monthLabel(currentMonth)}`,
-            value: fmt(monthRevenue),
-            icon: "💰",
-            bg: "#dcfce7",
-            tx: "#166534",
-          },
-          {
-            label: "Pending Dues",
-            value: fmt(pendingDues),
-            icon: "⏳",
-            bg: "#fee2e2",
-            tx: "#991b1b",
-          },
-        ]}
-      />
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <Section title={`Today's Delivery — ${today}`} action={
+        <Btn variant="secondary" small onClick={() => onSetTab("delivery")}>View Log <ArrowRight size={14} /></Btn>
+      } />
+      
+      <StatGrid items={[
+        { label: "Scheduled", value: todayLogs.length, icon: <Calendar size={14} /> },
+        { label: "Delivered", value: deliveredCount, icon: <CheckCircle size={14} color="#16a34a" /> },
+        { label: "Skipped", value: skippedCount, icon: <XCircle size={14} color="#dc2626" /> },
+        { label: "Total (L)", value: `${totalLiters} L`, icon: <Droplet size={14} color="#2563eb" /> },
+      ]} />
 
-      <Card>
-        <div
-          style={{
-            fontWeight: 600,
-            fontSize: 13,
-            color: "#111",
-            marginBottom: 10,
-          }}
-        >
-          Today's Delivery — {today}
+      <div>
+        <Section title="Quick Actions" />
+        <div className="quick-actions">
+          {QUICK_ACTIONS.map((q) => {
+            const Icon = q.icon;
+            return (
+              <button key={q.label} className="quick-action-btn" onClick={() => q.action === "generate" ? onGenerateBill() : onOpenModal(q.type)}>
+                <Icon size={20} />
+                <span>{q.label}</span>
+              </button>
+            );
+          })}
         </div>
-        <div
-          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}
-        >
-          {[
-            { label: "Scheduled", value: todayLogs.length },
-            {
-              label: "Delivered",
-              value: todayLogs.filter((l) => l.delivered).length,
-            },
-            {
-              label: "Skipped",
-              value: todayLogs.filter((l) => !l.delivered).length,
-            },
-            {
-              label: "Total (L)",
-              value:
-                todayLogs
-                  .filter((l) => l.delivered)
-                  .reduce((s, l) => s + l.qty, 0)
-                  .toFixed(1) + " L",
-            },
-          ].map((x) => (
-            <div
-              key={x.label}
-              style={{ textAlign: "center", padding: "8px 0" }}
-            >
-              <div style={{ fontSize: 20, fontWeight: 700, color: "#111" }}>
-                {x.value}
-              </div>
-              <div style={{ fontSize: 11, color: "#6b7280" }}>{x.label}</div>
-            </div>
-          ))}
-        </div>
-        <Btn
-          full
-          onClick={() => onSetTab("delivery")}
-          variant="secondary"
-          style={{ marginTop: 8 }}
-        >
-          View Delivery Log →
-        </Btn>
-      </Card>
+      </div>
 
-      <Card>
-        <div
-          style={{
-            fontWeight: 600,
-            fontSize: 13,
-            color: "#111",
-            marginBottom: 10,
-          }}
-        >
-          Quick Actions
-        </div>
-        <div
-          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}
-        >
-          {QUICK_ACTIONS.map((q) => (
-            <button
-              key={q.label}
-              onClick={() =>
-                q.action === "generate" ? onGenerateBill() : onOpenModal(q.type)
-              }
-              style={{
-                background: BLUE_L,
-                color: BLUE,
-                border: "none",
-                borderRadius: 10,
-                padding: "10px 8px",
-                fontSize: 12,
-                fontWeight: 500,
-                cursor: "pointer",
-                textAlign: "left",
-              }}
-            >
-              <span style={{ fontSize: 16 }}>{q.icon}</span>
-              <br />
-              {q.label}
-            </button>
-          ))}
-        </div>
-      </Card>
-
-      <Card>
-        <div
-          style={{
-            fontWeight: 600,
-            fontSize: 13,
-            color: "#111",
-            marginBottom: 8,
-          }}
-        >
-          Recent Bills
-        </div>
-        {bills.slice(0, 3).map((b) => (
-          <div
-            key={b.id}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "6px 0",
-              borderBottom: "0.5px solid #f3f4f6",
-            }}
-          >
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 500, color: "#111" }}>
-                {customerName(b.custId)}
-              </div>
-              <div style={{ fontSize: 11, color: "#6b7280" }}>{b.month}</div>
+      <div>
+        <Section title="Recent Bills" action={
+          <button className="btn-ghost btn-sm" style={{ border: "none", background: "none", cursor: "pointer", color: "var(--brand-600)", fontSize: 13, fontWeight: 500 }} onClick={() => onSetTab("billing")}>
+            View all <ArrowRight size={14} />
+          </button>
+        } />
+        <Card>
+          {bills.slice(0, 3).length === 0 ? (
+            <Empty msg="No recent bills" />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {bills.slice(0, 3).map((b) => (
+                <div key={b.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--border-color)" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{customerName(b.custId)}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{monthLabel(b.month)}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <span style={{ fontWeight: 700, fontSize: 15 }}>{fmt(b.amount)}</span>
+                    <Badge label={b.status} />
+                  </div>
+                </div>
+              ))}
             </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#111" }}>
-                {fmt(b.amount)}
-              </div>
-              <Badge label={b.status} />
-            </div>
-          </div>
-        ))}
-        <button
-          onClick={() => onSetTab("billing")}
-          style={{
-            background: "none",
-            border: "none",
-            color: BLUE,
-            fontSize: 12,
-            cursor: "pointer",
-            marginTop: 8,
-            padding: 0,
-          }}
-        >
-          View all bills →
-        </button>
-      </Card>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }

@@ -1,44 +1,26 @@
-// ── ui.jsx ───────────────────────────────────────────────────────────────────
-// Tiny stateless UI primitives. All inline-styled (matches the existing app).
-// No state, no side effects — props in, JSX out.
+import { X } from "lucide-react";
 
-import { BLUE, BLUE_L, SC } from "../lib/constants.js";
+const SC = {
+  Active: { bg: "#dcfce7", tx: "#166534" },
+  Paused: { bg: "#fef9c3", tx: "#854d0e" },
+  Inactive: { bg: "#f3f4f6", tx: "#374151" },
+  Paid: { bg: "#dcfce7", tx: "#166534" },
+  Unpaid: { bg: "#fee2e2", tx: "#991b1b" },
+  Partial: { bg: "#fef9c3", tx: "#854d0e" },
+  Draft: { bg: "#f3f4f6", tx: "#374151" },
+  Confirmed: { bg: "#dbeafe", tx: "#1e40af" },
+  Reconciled: { bg: "#e0e7ff", tx: "#3730a3" },
+};
 
-// Default inline input style. Spread `style` after the result if you need
-// per-input overrides: <input style={{...IS(), ...override}} />
-export const IS = (extra = {}) => ({
-  width: "100%",
-  padding: "8px 10px",
-  border: "1px solid #d1d5db",
-  borderRadius: 8,
-  fontSize: 13,
-  boxSizing: "border-box",
-  color: "#111",
-  background: "#fff",
-  ...extra,
-});
-
-// Status pill. Looks up color in SC; falls back to neutral gray.
 export function Badge({ label }) {
   const c = SC[label] || { bg: "#f3f4f6", tx: "#374151" };
   return (
-    <span
-      style={{
-        background: c.bg,
-        color: c.tx,
-        fontSize: 11,
-        fontWeight: 500,
-        padding: "2px 8px",
-        borderRadius: 99,
-        whiteSpace: "nowrap",
-      }}
-    >
+    <span className="badge" style={{ background: c.bg, color: c.tx }}>
       {label}
     </span>
   );
 }
 
-// Bottom-fixed auto-dismissing notice. Caller drives lifecycle via `onClose`.
 export function Toast({ msg, type, onClose }) {
   const bg =
     type === "success"
@@ -49,150 +31,38 @@ export function Toast({ msg, type, onClose }) {
           ? "#854d0e"
           : "#1e40af";
   return (
-    <div
-      style={{
-        position: "fixed",
-        bottom: 72,
-        left: "50%",
-        transform: "translateX(-50%)",
-        background: bg,
-        color: "#fff",
-        padding: "10px 18px",
-        borderRadius: 10,
-        fontSize: 13,
-        zIndex: 9999,
-        maxWidth: 320,
-        textAlign: "center",
-      }}
-    >
+    <div className="toast" style={{ background: bg }}>
       {msg}
       <button
+        className="close-btn"
         onClick={onClose}
-        style={{
-          marginLeft: 8,
-          background: "none",
-          border: "none",
-          color: "#fff",
-          cursor: "pointer",
-        }}
+        style={{ color: "white" }}
       >
-        ✕
+        <X size={16} />
       </button>
     </div>
   );
 }
 
-// Bottom-sheet modal shell. Title bar + scrollable body. `wide` bumps maxWidth.
 export function Modal({ title, onClose, children, wide }) {
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,.45)",
-        zIndex: 800,
-        display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "center",
-      }}
-    >
+    <div className="modal-overlay" onClick={onClose}>
       <div
-        style={{
-          background: "#fff",
-          width: "100%",
-          maxWidth: wide ? 460 : 420,
-          maxHeight: "88vh",
-          overflowY: "auto",
-          borderRadius: "16px 16px 0 0",
-          padding: 20,
-          boxSizing: "border-box",
-        }}
+        className={`modal-content ${wide ? "wide" : ""}`}
+        onClick={(e) => e.stopPropagation()}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 14,
-          }}
-        >
-          <span style={{ fontWeight: 600, fontSize: 15, color: "#111" }}>
-            {title}
-          </span>
-          <button
-            onClick={onClose}
-            style={{
-              background: "none",
-              border: "none",
-              fontSize: 20,
-              cursor: "pointer",
-              color: "#6b7280",
-            }}
-          >
-            ✕
+        <div className="modal-header">
+          <h3>{title}</h3>
+          <button className="close-btn" onClick={onClose}>
+            <X size={20} />
           </button>
         </div>
-        {children}
+        <div className="modal-body">{children}</div>
       </div>
     </div>
   );
 }
 
-const BUTTON_VARIANTS = {
-  primary: { background: BLUE, color: "#fff", border: "none" },
-  secondary: {
-    background: "#f3f4f6",
-    color: "#374151",
-    border: "1px solid #d1d5db",
-  },
-  danger: {
-    background: "#fee2e2",
-    color: "#991b1b",
-    border: "1px solid #fca5a5",
-  },
-  success: {
-    background: "#dcfce7",
-    color: "#166534",
-    border: "1px solid #86efac",
-  },
-  ghost: { background: "none", color: BLUE, border: "none" },
-};
-
-function getSizeStyles(small) {
-  return {
-    padding: small ? "4px 10px" : "8px 14px",
-    fontSize: small ? 11 : 13,
-  };
-}
-
-function getCursorStyle(disabled) {
-  return { cursor: disabled ? "not-allowed" : "pointer" };
-}
-
-function getDisabledStyle(disabled) {
-  return disabled ? { opacity: 0.55, filter: "grayscale(20%)" } : {};
-}
-
-function getWidthStyle(full) {
-  return { width: full ? "100%" : undefined };
-}
-
-function getButtonStyle(variant, small, full, disabled, extraStyle) {
-  const base = BUTTON_VARIANTS[variant] || BUTTON_VARIANTS.primary;
-  return {
-    ...base,
-    ...getDisabledStyle(disabled),
-    ...getSizeStyles(small),
-    borderRadius: 8,
-    fontWeight: 500,
-    ...getCursorStyle(disabled),
-    whiteSpace: "nowrap",
-    ...getWidthStyle(full),
-    ...extraStyle,
-  };
-}
-
-// Themed button. `variant` selects the palette; small/full tweak size & width.
 export function Btn({
   onClick,
   children,
@@ -201,56 +71,52 @@ export function Btn({
   full,
   disabled,
   style,
+  type = "button",
 }) {
   return (
     <button
-      disabled={disabled}
+      type={type}
+      className={`btn btn-${variant} ${small ? "btn-sm" : "btn-md"} ${full ? "btn-full" : ""}`}
       onClick={onClick}
-      style={getButtonStyle(variant, small, full, disabled, style)}
+      disabled={disabled}
+      style={style}
     >
       {children}
     </button>
   );
 }
 
-// Label + child wrapper for form rows.
-export function Field({ label, children }) {
+export function Field({ label, children, error }) {
   return (
-    <div style={{ marginBottom: 12 }}>
-      <label
-        style={{
-          fontSize: 12,
-          color: "#6b7280",
-          display: "block",
-          marginBottom: 4,
-        }}
-      >
-        {label}
-      </label>
+    <div className="field">
+      {label && <label className="field-label">{label}</label>}
       {children}
+      {error && (
+        <span style={{ color: "#dc2626", fontSize: 12, marginTop: -4 }}>
+          {error}
+        </span>
+      )}
     </div>
   );
 }
 
-// Plain bordered card. Override `style` for tinted variants.
 export function Card({ children, style }) {
   return (
-    <div
-      style={{
-        background: "#fff",
-        border: "0.5px solid #e5e7eb",
-        borderRadius: 12,
-        padding: "12px 14px",
-        marginBottom: 10,
-        ...style,
-      }}
-    >
+    <div className="card" style={style}>
       {children}
     </div>
   );
 }
+export function Empty({ msg }) {
+  return (
+    <div
+      style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}
+    >
+      {msg}
+    </div>
+  );
+}
 
-// Section title bar with an optional right-aligned action node.
 export function Section({ title, action }) {
   return (
     <div
@@ -261,96 +127,37 @@ export function Section({ title, action }) {
         marginBottom: 12,
       }}
     >
-      <span style={{ fontWeight: 600, fontSize: 15, color: "#111" }}>
-        {title}
-      </span>
-      {action || null}
+      <h3 style={{ fontSize: 16, fontWeight: 600 }}>{title}</h3>
+      {action}
     </div>
   );
 }
 
-// 2-column grid of stat tiles. Each tile: optional tinted bg, icon, label, value.
 export function StatGrid({ items }) {
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        gap: 10,
-        marginBottom: 14,
-      }}
-    >
-      {items.map((i) => (
-        <div
-          key={i.label}
-          style={{
-            background: i.bg || BLUE_L,
-            borderRadius: 10,
-            padding: "10px 12px",
-          }}
-        >
-          <div style={{ fontSize: 11, color: i.tx || BLUE }}>
+    <div className="stat-grid">
+      {items.map((i, idx) => (
+        <div key={idx} className="stat-tile">
+          <div className="stat-label">
             {i.icon} {i.label}
           </div>
-          <div
-            style={{
-              fontSize: 20,
-              fontWeight: 700,
-              color: i.tx || BLUE,
-              marginTop: 2,
-            }}
-          >
-            {i.value}
-          </div>
+          <div className="stat-value">{i.value}</div>
         </div>
       ))}
     </div>
   );
 }
 
-// Empty-state placeholder.
-export function Empty({ msg }) {
-  return (
-    <div
-      style={{
-        textAlign: "center",
-        padding: "32px 0",
-        color: "#9ca3af",
-        fontSize: 13,
-      }}
-    >
-      {msg}
-    </div>
-  );
-}
-
-// Section header used inside a Card. Optional right-aligned action node.
-export function CardHeader({ title, action }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: 10,
-      }}
-    >
-      <span style={{ fontWeight: 600, fontSize: 13, color: "#111" }}>
-        {title}
-      </span>
-      {action}
-    </div>
-  );
-}
-
-// <option> list of active brands. Shared by the imports filter and addImport modal.
 export function ActiveBrandOptions({ brands }) {
   return brands
     .filter((b) => b.status === "Active")
-    .map((b) => <option key={b.id}>{b.name}</option>);
+    .map((b) => (
+      <option key={b.id} value={b.name}>
+        {b.name}
+      </option>
+    ));
 }
 
-// <option> list of active customers. Shared by the adjustment and pause modals.
 export function ActiveCustomerOptions({ customers }) {
   return customers
     .filter((c) => c.status === "Active")
@@ -360,3 +167,17 @@ export function ActiveCustomerOptions({ customers }) {
       </option>
     ));
 }
+
+// Backward-compatible inline style for inputs in modals
+export const IS = (extra = {}) => ({
+  width: "100%",
+  padding: "10px 14px",
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 8,
+  fontSize: 14,
+  color: "#0f172a",
+  transition: "all 0.2s ease",
+  outline: "none",
+  ...extra,
+});

@@ -23,6 +23,7 @@
     "check-all": "npm run lint && npm run test && npm run build && npm run audit && npm run circular && npm run fallow && npm run health && npm run spellcheck  && npm run check-deps "
   },
   "dependencies": {
+    "lucide-react": "^1.23.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
