@@ -149,7 +149,7 @@ function addMilkImport(payload) {
     const importId = "IMP-" + Utilities.getUuid().substring(0, 8).toUpperCase();
     const now = Utilities.formatDate(
       new Date(),
-      "Asia/Kolkata",
+      TIMEZONE,
       "yyyy-MM-dd'T'HH:mm:ssXXX",
     );
     const quantity = Number(payload.quantity);
@@ -254,7 +254,7 @@ function updateMilkImport(payload) {
 
     const now = Utilities.formatDate(
       new Date(),
-      "Asia/Kolkata",
+      TIMEZONE,
       "yyyy-MM-dd'T'HH:mm:ssXXX",
     );
     const updated = found.rowValues.slice();
@@ -335,7 +335,7 @@ function confirmMilkImport(payload) {
 
     const now = Utilities.formatDate(
       new Date(),
-      "Asia/Kolkata",
+      TIMEZONE,
       "yyyy-MM-dd'T'HH:mm:ssXXX",
     );
     const newVersion = Number(found.rowValues[hdr["Version"]]) + 1;
@@ -500,56 +500,38 @@ function getMilkImportSummary(payload) {
  * Required: month (YYYY-MM)
  */
 function getDailyInventory(payload) {
-    const sheet = getSheet(SHEET_NAMES.MILK_IMPORTS || "MilkImports");
-    const hdr = buildHeaderMap(sheet);
-    const data = sheet.getDataRange().getValues().slice(1);
-
-    const settings = PropertiesService.getScriptProperties().getProperties();
-    const categoryFilterConfig = settings["MilkCategoryNames"];
+  const targetDate = payload.date || todayIST();
+  const sheet = getSheet(SHEET_NAMES.MILK_IMPORTS);
+  const hdr = getHeaders(SHEET_NAMES.MILK_IMPORTS);
+  const data = sheet.getDataRange().getValues();
+  
+  let totalQty = 0;
+  let totalValue = 0;
+  const byProduct = {};
+  
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const rowDate = row[hdr["Date"]];
     
-    let allowedProducts = null;
-    let categoryFilterActive = false;
+    // FIXED: Actually filter by the requested date
+    if (rowDate !== targetDate) continue; 
     
-    if (categoryFilterConfig) {
-        try {
-            allowedProducts = JSON.parse(categoryFilterConfig);
-            categoryFilterActive = true;
-        } catch (e) {
-            Logger.log("Failed to parse MilkCategoryNames: " + e.message);
-        }
-    }
+    const status = row[hdr["Status"]] || "Completed";
+    if (status === "Cancelled") continue;
 
-    let totalLiters = 0;
-    let totalValue = 0;
-    const byProduct = {};
-
-    data.forEach(row => {
-        const product = row[hdr["Product"]] || row[hdr["MilkType"]] || "Unknown";
-        const qty = Number(row[hdr["Qty"]] || row[hdr["Quantity"]]) || 0;
-        const rate = Number(row[hdr["Rate"]]) || 0;
-        
-        // FIX: Actually apply the filter if it's active
-        if (categoryFilterActive && allowedProducts && !allowedProducts.includes(product)) {
-            return; // Skip this row
-        }
-
-        totalLiters += qty;
-        totalValue += qty * rate;
-        
-        if (!byProduct[product]) {
-            byProduct[product] = { liters: 0, value: 0 };
-        }
-        byProduct[product].liters += qty;
-        byProduct[product].value += qty * rate;
-    });
-
-    return respond(true, {
-        totalLiters,
-        totalValue,
-        byProduct,
-        categoryFilterActive, 
-        categoryFilterConfigured: !!categoryFilterConfig
-    });
+    const product = row[hdr["MilkType"]] || "Unknown";
+    const qty = Number(row[hdr["Quantity"]]) || 0;
+    const rate = Number(row[hdr["RatePerLiter"]]) || 0; // FIXED: was "Rate"
+    
+    totalQty += qty;
+    totalValue += (qty * rate);
+    
+    if (!byProduct[product]) byProduct[product] = { qty: 0, value: 0 };
+    byProduct[product].qty += qty;
+    byProduct[product].value += (qty * rate);
+  }
+  
+  return respond(true, { date: targetDate, totalQty, totalValue, byProduct });
 }
 
 /**
@@ -623,7 +605,7 @@ function reconcileMilkInventory(payload) {
     // action === 'reconcile'
     const now = Utilities.formatDate(
       new Date(),
-      "Asia/Kolkata",
+      TIMEZONE,
       "yyyy-MM-dd'T'HH:mm:ssXXX",
     );
     let reconciledCount = 0;
@@ -693,7 +675,7 @@ function addMilkBrand(payload) {
       "BRAND-" + Utilities.getUuid().substring(0, 8).toUpperCase();
     const now = Utilities.formatDate(
       new Date(),
-      "Asia/Kolkata",
+      TIMEZONE,
       "yyyy-MM-dd'T'HH:mm:ssXXX",
     );
 

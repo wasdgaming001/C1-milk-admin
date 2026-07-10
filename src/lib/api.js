@@ -62,15 +62,16 @@ export function mapLogFromApi(l) {
 }
 
 export function mapAdjustmentFromApi(a) {
- return {
-   id: a.adjustmentId,
-   billId: a.billId,
-   custId: a.customerId,
-   applied: !!a.applied,
-   reason: a.reason,
-   amount: a.amount,
-   date: a.date,
- };
+  return {
+    adjustmentId: a.adjustmentId,
+    billId: a.billId || "",
+    customerId: a.customerId,
+    amount: Number(a.amount || 0),
+    reason: a.reason || "",
+    applied: a.applied !== undefined ? !!a.applied : (a.status === "Applied" || a.status === "TRUE"),
+    date: a.date,
+    createdAt: a.createdAt,
+  };
 }
 
 export function mapPauseFromApi(p) {

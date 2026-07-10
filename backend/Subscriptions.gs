@@ -9,7 +9,7 @@ function logSubscriptionHistory(subId, action, details) {
     try {
         const sheet = getSheet(SHEET_NAMES.SUBSCRIPTION_HISTORY || "SubscriptionHistory");
         const hdr = buildHeaderMap(sheet);
-        const now = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd'T'HH:mm:ssXXX");
+        const now = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd'T'HH:mm:ssXXX");
         const row = new Array(sheet.getLastColumn()).fill("");
 
         row[hdr["Id"]] = Utilities.getUuid();
@@ -73,17 +73,17 @@ function getSubscriptions(payload) {
  */
 function saveSubscription(payload) {
     // FIX (AI-1): Allow quantity to be 0, but reject negative numbers
-    if (!payload.customerId || !payload.milkType || payload.quantity === undefined || Number(payload.quantity) < 0 || !Array.isArray(payload.deliveryDays)) {
+    if (!payload.customerId || !payload.milkType || payload.quantity === undefined || Number(payload.quantity) <=0 || !Array.isArray(payload.deliveryDays)) {
         return respond(false, null, {
             code: "VALIDATION_ERROR",
-            message: "Missing or invalid required fields (quantity must be >= 0)",
+            message: "Quantity must be greater than zero" ,
         });
     }
 
     return withLock(function () {
         const sheet = getSheet(SHEET_NAMES.SUBSCRIPTIONS || "Subscriptions");
         const hdr = buildHeaderMap(sheet);
-        const now = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd'T'HH:mm:ssXXX");
+        const now = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd'T'HH:mm:ssXXX");
 
         if (payload.id) {
             // FIX (AI-1): Require expectedVersion for updates to prevent lost updates
@@ -214,7 +214,7 @@ function addAdHocLog(payload) {
         // FIX: Use SHEET_NAMES constant instead of hardcoded string
         const sheet = getSheet(SHEET_NAMES.DAILY_LOGS || "DailyLogs");
         const hdr = buildHeaderMap(sheet);
-        const now = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd'T'HH:mm:ssXXX");
+        const now = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd'T'HH:mm:ssXXX");
         
         // FIX: Add idempotency check
         if (payload.idempotencyKey) {
@@ -249,32 +249,52 @@ function addAdHocLog(payload) {
  * addCreditNote — issues a credit note to offset a customer's bill.
  */
 function addCreditNote(payload) {
-    if (!payload.customerId || !payload.amount || !payload.reason) {
-        return respond(false, null, {
-            code: "VALIDATION_ERROR",
-            message: "Missing required fields",
-        });
+  return withLock(function () {
+    if (!payload.customerId) {
+      return respond(false, null, { code: "VALIDATION_ERROR", message: "Missing customerId" });
+    }
+    const amount = Number(payload.amount);
+    if (isNaN(amount) || amount <= 0) {
+      return respond(false, null, { code: "VALIDATION_ERROR", message: "Amount must be a positive number" });
+    }
+    if (!payload.reason || typeof payload.reason !== "string") {
+      return respond(false, null, { code: "VALIDATION_ERROR", message: "Missing or invalid reason" });
     }
 
-    return withLock(function () {
-        const sheet = getSheet(SHEET_NAMES.CREDIT_NOTES || "CreditNotes");
-        const hdr = buildHeaderMap(sheet);
-        const now = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd'T'HH:mm:ssXXX");
-        const newRow = new Array(sheet.getLastColumn()).fill("");
+    // Verify customer exists
+    const custSheet = getSheet(SHEET_NAMES.CUSTOMERS);
+    const custHdr = getHeaders(SHEET_NAMES.CUSTOMERS);
+    const custData = custSheet.getDataRange().getValues();
+    let customerExists = false;
+    for (let i = 1; i < custData.length; i++) {
+      if (custData[i][custHdr["CustomerId"]] === payload.customerId) {
+        customerExists = true;
+        break;
+      }
+    }
+    if (!customerExists) {
+      return respond(false, null, { code: "NOT_FOUND", message: "Customer not found" });
+    }
 
-        newRow[hdr["Id"]] = Utilities.getUuid();
-        newRow[hdr["CustomerId"]] = payload.customerId;
-        if (hdr["BillId"] !== undefined) newRow[hdr["BillId"]] = payload.billId || "";
-        newRow[hdr["Amount"]] = Number(payload.amount);
-        newRow[hdr["Reason"]] = payload.reason;
-        newRow[hdr["CreatedAt"]] = now;
-        if (hdr["IdempotencyKey"] !== undefined) {
-            newRow[hdr["IdempotencyKey"]] = payload.idempotencyKey || `cn-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        }
-
-        safeAppend(sheet, newRow);
-        return respond(true, { id: newRow[hdr["Id"]] });
-    });
+    const sheet = getSheet(SHEET_NAMES.CREDIT_NOTES);
+    const hdr = getHeaders(SHEET_NAMES.CREDIT_NOTES);
+    const noteId = "CN-" + Utilities.getUuid();
+    
+    const row = new Array(sheet.getLastColumn()).fill("");
+    row[hdr["CreditNoteId"]] = noteId;
+    row[hdr["CustomerId"]] = payload.customerId;
+    row[hdr["Date"]] = payload.date || todayIST();
+    row[hdr["Amount"]] = amount;
+    row[hdr["Reason"]] = sanitizeForText(payload.reason);
+    row[hdr["Applied"]] = false;
+    row[hdr["BillId"]] = "";
+    row[hdr["CreatedAt"]] = nowISTTimestamp();
+    
+    sheet.appendRow(row);
+    writeActivityLog("addCreditNote", "Created credit note " + noteId + " for customer " + payload.customerId);
+    
+    return respond(true, { creditNoteId: noteId });
+  });
 }
 
 /**
@@ -364,7 +384,7 @@ function generateDailyLogsForDate(payload) {
         });
 
         // 4. Fetch Pauses
-        const pauseSheet = getSheet(SHEET_NAMES.PAUSES || "PausePeriods");
+        const pausesSheet = getSheet(SHEET_NAMES.PAUSE_PERIODS);
         const pauseHdr = buildHeaderMap(pauseSheet);
         const pauseLastRow = pauseSheet.getLastRow();
         const pauses = pauseLastRow >= 2 ? pauseSheet.getRange(2, 1, pauseLastRow - 1, pauseSheet.getLastColumn()).getValues() : [];
@@ -384,7 +404,7 @@ function generateDailyLogsForDate(payload) {
         let created = 0, skippedExisting = 0, skippedPaused = 0, skippedWrongDay = 0, skippedInactiveCust = 0;
         const newLogs = [];
         const logColumns = Object.keys(logHdr).length;
-        const now = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd'T'HH:mm:ssXXX");
+        const now = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd'T'HH:mm:ssXXX");
 
         subs.forEach((row) => {
             const isActive = row[subHdr["IsActive"]] === true || row[subHdr["IsActive"]] === "TRUE";

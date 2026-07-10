@@ -657,46 +657,60 @@ const SHEETS_TO_ERASE = [
  * Required: confirmationCode, appSecret
  */
 function eraseAllData(payload) {
-    if (!payload || payload.confirmationCode !== "ERASE_ALL_DATA" || !payload.appSecret) {
-        return respond(false, null, { code: "UNAUTHORIZED", message: "Invalid confirmation" });
-    }
-    
-    const expectedSecret = PropertiesService.getScriptProperties().getProperty("APP_SECRET");
-    if (payload.appSecret !== expectedSecret) {
-        return respond(false, null, { code: "UNAUTHORIZED", message: "Invalid appSecret" });
-    }
+  if (!payload || payload.confirmationCode !== "ERASE_ALL_DATA" || !payload.appSecret) {
+    return respond(false, null, { code: "VALIDATION_ERROR", message: "Invalid confirmation code or secret" });
+  }
+  if (payload.appSecret !== APP_SECRET) {
+    return respond(false, null, { code: "UNAUTHORIZED", message: "Invalid app secret" });
+  }
 
-    const sheetsToErase = [
-        SHEET_NAMES.CUSTOMERS, SHEET_NAMES.SUBSCRIPTIONS, SHEET_NAMES.DAILY_LOGS,
-        SHEET_NAMES.BILLS, SHEET_NAMES.PAYMENTS, SHEET_NAMES.MILK_IMPORTS,
-        SHEET_NAMES.ADJUSTMENTS, SHEET_NAMES.CREDIT_NOTES, SHEET_NAMES.PAUSES,
-        SHEET_NAMES.ACTIVITY_LOG, SHEET_NAMES.SESSIONS, SHEET_NAMES.SYSTEM_STATE
-    ];
+  // FIXED: Used correct constants. Removed undefined PAUSES and SESSIONS.
+  const sheetsToErase = [
+    SHEET_NAMES.CUSTOMERS,
+    SHEET_NAMES.SUBSCRIPTIONS,
+    SHEET_NAMES.DAILY_LOGS,
+    SHEET_NAMES.BILLS,
+    SHEET_NAMES.PAYMENTS,
+    SHEET_NAMES.MILK_IMPORTS,
+    SHEET_NAMES.ADJUSTMENTS,
+    SHEET_NAMES.CREDIT_NOTES,
+    SHEET_NAMES.PAUSE_PERIODS, // FIXED: was SHEET_NAMES.PAUSES
+    SHEET_NAMES.ACTIVITY_LOG,
+    SHEET_NAMES.SYSTEM_STATE
+  ];
 
-    const results = {};
-    let hasErrors = false; // FIX: Track if any sheet failed
+  const results = {};
+  let hasErrors = false;
 
-    sheetsToErase.forEach(name => {
-        try {
-            const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
-            if (sheet) {
-                const lastRow = sheet.getLastRow();
-                if (lastRow > 1) {
-                    // FIX: Use batch deletion instead of clear() or looping deleteRow
-                    sheet.deleteRows(2, lastRow - 1);
-                }
-                results[name] = "cleared";
-            } else {
-                results[name] = "not_found";
-            }
-        } catch (e) {
-            results[name] = "error: " + e.message;
-            hasErrors = true; 
+  sheetsToErase.forEach(function (name) {
+    if (!name) return;
+    try {
+      const sheet = getSheet(name);
+      if (sheet) {
+        const lastRow = sheet.getLastRow();
+        if (lastRow > 1) {
+          sheet.deleteRows(2, lastRow - 1);
         }
-    });
+        results[name] = "erased";
+      } else {
+        results[name] = "not_found";
+      }
+    } catch (e) {
+      results[name] = "error: " + e.message;
+      hasErrors = true;
+    }
+  });
 
-    // FIX: Return success: false if any sheet errored
-    return respond(!hasErrors, results, hasErrors ? { code: "PARTIAL_FAILURE", message: "Some sheets failed to clear" } : null);
+  // Clear script properties (rate limits, caches, etc.)
+  try {
+    PropertiesService.getScriptProperties().deleteAllProperties();
+    results["ScriptProperties"] = "cleared";
+  } catch (e) {
+    results["ScriptProperties"] = "error: " + e.message;
+  }
+
+  writeActivityLog("eraseAllData", "All data erased by admin");
+  return respond(!hasErrors, { results });
 }
 
 // ----------------------------------------------------------------------------
@@ -732,6 +746,7 @@ const SCHEMA_DEFINITIONS = {
     "Note",
     "CreatedAt",
     "UpdatedAt",
+    "Version",
   ],
   PAUSE_PERIODS: [
     "PauseId",

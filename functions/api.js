@@ -1,17 +1,20 @@
 // functions/api.js
 // Cloudflare Pages Serverless Function that proxies requests to Google Apps Script
 
-const buildCorsHeaders = (origin, allowedOrigin) => {
-  const allow =
-    allowedOrigin === "*" ? origin : allowedOrigin.replace(/\/$/, "");
-  return {
-    "Access-Control-Allow-Origin": allow,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Max-Age": "86400",
-    Vary: "Origin",
-  };
-};
+function buildCorsHeaders(request) {
+    const origin = request.headers.get("Origin") || "";
+    const allowedOrigin = env.ALLOWED_ORIGIN || "*";
+    // Do NOT echo the request origin, as that creates a security vulnerability.
+    const corsOrigin = allowedOrigin === "*" ? "*" : allowedOrigin.replace(/\/$/, "");
+    return {
+        "Access-Control-Allow-Origin": corsOrigin,
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Max-Age": "86400",
+        // Note: Do NOT set Access-Control-Allow-Credentials: true if Origin is "*"
+        ...(corsOrigin !== "*" ? { "Access-Control-Allow-Credentials": "true" } : {})
+    };
+}
 
 const jsonResponse = (statusCode, headers, payload) =>
   new Response(JSON.stringify(payload), {
@@ -55,16 +58,14 @@ const checkEnvironment = (env, corsHeaders) => {
   return null;
 };
 
-const checkOrigin = (request, corsHeaders, allowedOrigin) => {
-  const origin = (request.headers.get("Origin") || "").replace(/\/$/, "");
-  if (
-    allowedOrigin !== "*" &&
-    origin.toLowerCase() !== allowedOrigin.replace(/\/$/, "").toLowerCase()
-  ) {
-    return errorResponse(403, corsHeaders, "FORBIDDEN", "Origin not allowed");
-  }
-  return null;
-};
+function checkOrigin(request) {
+    const origin = request.headers.get("Origin") || "";
+    const allowedOrigin = env.ALLOWED_ORIGIN || "*";
+    // If allowedOrigin is "*", we accept any origin.
+    if (allowedOrigin === "*") return true;
+
+    return origin.toLowerCase() === allowedOrigin.toLowerCase().replace(/\/$/, "");
+}
 
 // fallow-ignore-next-line complexity
 const parseAndValidateBody = async (request, corsHeaders) => {
@@ -100,8 +101,10 @@ async function validateRequest(request, env, corsHeaders) {
   const envCheck = checkEnvironment(env, corsHeaders);
   if (envCheck) return envCheck;
 
-  const originCheck = checkOrigin(request, corsHeaders, allowedOrigin);
-  if (originCheck) return originCheck;
+  const originCheck = checkOrigin(request);
+  if (!originCheck) {
+    return errorResponse(403, corsHeaders, "FORBIDDEN", "Origin not allowed");
+  }
 
   const bodyCheck = await parseAndValidateBody(request, corsHeaders);
   if (bodyCheck instanceof Response) return bodyCheck; // It's an error response

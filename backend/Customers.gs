@@ -146,7 +146,7 @@ function addCustomer(payload) {
     }
 
     const customerId = "CUST-" + Utilities.getUuid().substring(0, 8).toUpperCase();
-    const now = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd'T'HH:mm:ssXXX");
+    const now = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd'T'HH:mm:ssXXX");
 
     const row = [];
     row[hdr["CustomerId"]] = customerId;
@@ -215,7 +215,7 @@ function updateCustomer(payload) {
       });
     }
 
-    const now = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd'T'HH:mm:ssXXX");
+    const now = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd'T'HH:mm:ssXXX");
     const updated = found.rowValues.slice();
 
     if (payload.name !== undefined) updated[hdr["Name"]] = sanitizeForText(payload.name).trim();
@@ -223,7 +223,16 @@ function updateCustomer(payload) {
     if (payload.phone !== undefined) updated[hdr["Phone"]] = payload.phone ? normalizePhone(payload.phone) : "";
     if (payload.product !== undefined) updated[hdr["Product"]] = payload.product;
     if (payload.dailyQty !== undefined) updated[hdr["DailyQty"]] = Number(payload.dailyQty);
-    if (payload.deliveryDays !== undefined) updated[hdr["DeliveryDays"]] = JSON.stringify(payload.deliveryDays);
+    
+    // FIXED: Properly handle null/undefined for deliveryDays to prevent storing the literal string "null"
+    if (payload.deliveryDays !== undefined) {
+      if (payload.deliveryDays === null || !Array.isArray(payload.deliveryDays)) {
+        updated[hdr["DeliveryDays"]] = "[]";
+      } else {
+        updated[hdr["DeliveryDays"]] = JSON.stringify(payload.deliveryDays);
+      }
+    }
+    
     if (payload.status !== undefined) updated[hdr["Status"]] = payload.status;
 
     updated[hdr["Version"]] = currentVersion + 1;
@@ -275,6 +284,7 @@ function updateCustomer(payload) {
             Logger.log("Subscription sync failed: " + syncErr.message);
         }
     }
+    
     sheet.getRange(found.rowIndex, 1, 1, updated.length).setValues([updated]);
     writeActivityLog("updateCustomer", payload, {
       customerId: payload.customerId,
@@ -287,37 +297,39 @@ function updateCustomer(payload) {
     });
   });
 }
-
 /**
  * deactivateCustomer — soft-delete (sets Status=Inactive). Never physically
  * deletes a customer row outside of eraseAllData (DPDP compliance flow).
  */
 function deactivateCustomer(payload) {
-  if (!payload.customerId)
-    return respond(false, null, {
-      code: "VALIDATION_ERROR",
-      message: "customerId is required",
-    });
-
   return withLock(function () {
-    const sheet = getSheet("CUSTOMERS");
-    const hdr = buildHeaderMap(sheet);
-    const found = findRowById(sheet, hdr["CustomerId"], payload.customerId);
-    if (!found)
-      return respond(false, null, {
-        code: "NOT_FOUND",
-        message: "Customer not found",
-      });
+    if (!payload.customerId) {
+      return respond(false, null, { code: "VALIDATION_ERROR", message: "Missing customerId" });
+    }
 
-    const now = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd'T'HH:mm:ssXXX");
-    sheet.getRange(found.rowIndex, hdr["Status"] + 1).setValue("Inactive");
-    sheet.getRange(found.rowIndex, hdr["Version"] + 1).setValue(Number(found.rowValues[hdr["Version"]]) + 1);
-    sheet.getRange(found.rowIndex, hdr["UpdatedAt"] + 1).setValue(now);
+    const sheet = getSheet(SHEET_NAMES.CUSTOMERS);
+    const hdr = getHeaders(SHEET_NAMES.CUSTOMERS);
+    const data = sheet.getDataRange().getValues();
 
-    writeActivityLog("deactivateCustomer", payload, {
-      customerId: payload.customerId,
-    });
-    return respond(true, { customerId: payload.customerId });
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][hdr["CustomerId"]] === payload.customerId) {
+        const currentStatus = data[i][hdr["Status"]];
+        
+        // Check if already inactive
+        if (currentStatus === "Inactive") {
+          return respond(false, null, { code: "ALREADY_INACTIVE", message: "Customer is already inactive" });
+        }
+        
+        data[i][hdr["Status"]] = "Inactive";
+        data[i][hdr["UpdatedAt"]] = nowISTTimestamp();
+        sheet.getRange(i + 1, 1, 1, data[0].length).setValues([data[i]]);
+        
+        writeActivityLog("deactivateCustomer", "Deactivated customer " + payload.customerId);
+        return respond(true, { customerId: payload.customerId });
+      }
+    }
+
+    return respond(false, null, { code: "NOT_FOUND", message: "Customer not found" });
   });
 }
 
@@ -349,7 +361,7 @@ function getCustomers(payload) {
 
   const total = filtered.length;
   // FIX (AI-3 High 4): Removed the hard cap of 200. Increased default to 5000 to prevent silent data truncation.
-  const limit = Number(payload.limit) || 5000; 
+  const limit = payload.limit !== undefined ? Math.max(0, Number(payload.limit)) : 5000;
   const offset = Number(payload.offset) || 0;
   const page = filtered.slice(offset, offset + limit);
 
@@ -414,7 +426,7 @@ function addPausePeriod(payload) {
     const pauseSheet = getSheet("PAUSE_PERIODS");
     const pauseHdr = buildHeaderMap(pauseSheet);
     const pauseId = "PAUSE-" + Utilities.getUuid().substring(0, 8).toUpperCase();
-    const now = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd'T'HH:mm:ssXXX");
+    const now = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd'T'HH:mm:ssXXX");
 
     const row = [];
     row[pauseHdr["PauseId"]] = pauseId;
@@ -427,7 +439,7 @@ function addPausePeriod(payload) {
     safeAppend(pauseSheet, row);
 
     // Only flip status to Paused if the pause window covers today
-    const today = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd");
+    const today = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd");
     const coversToday = payload.startDate <= today && (!payload.endDate || payload.endDate >= today);
     if (coversToday) {
       custSheet.getRange(custRow.rowIndex, custHdr["Status"] + 1).setValue("Paused");
@@ -458,6 +470,12 @@ function updateLogEntry(payload) {
       code: "VALIDATION_ERROR",
       message: "logId is required",
     });
+  if (payload.expectedVersion === undefined || payload.expectedVersion === null) {
+    return respond(false, null, {
+      code: "VALIDATION_ERROR",
+      message: "expectedVersion is required for updates",
+    });
+  }
 
   return withLock(function () {
     const sheet = getSheet("DAILY_LOGS");
@@ -469,11 +487,21 @@ function updateLogEntry(payload) {
         message: "Log entry not found",
       });
 
-    const now = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd'T'HH:mm:ssXXX");
-    if (payload.delivered !== undefined)
-      sheet.getRange(found.rowIndex, hdr["Delivered"] + 1).setValue(!!payload.delivered);
-    if (payload.note !== undefined)
-      sheet.getRange(found.rowIndex, hdr["Note"] + 1).setValue(sanitizeForText(payload.note));
+    // Check version for optimistic concurrency
+    const currentVersion = Number(found.rowValues[hdr["Version"]] || 1);
+    if (currentVersion !== Number(payload.expectedVersion)) {
+      return respond(false, null, {
+        code: "VERSION_CONFLICT",
+        message: "Log entry was modified by another process",
+        currentVersion: currentVersion,
+      });
+    }
+
+    const now = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd'T'HH:mm:ssXXX");
+    const updated = found.rowValues.slice();
+    
+    if (payload.delivered !== undefined) updated[hdr["Delivered"]] = !!payload.delivered;
+    if (payload.note !== undefined) updated[hdr["Note"]] = sanitizeForText(payload.note);
     if (payload.qty !== undefined) {
       const q = Number(payload.qty);
       if (isNaN(q) || q < 0 || q > MAX_DAILY_QTY)
@@ -481,12 +509,22 @@ function updateLogEntry(payload) {
           code: "VALIDATION_ERROR",
           message: "Invalid qty",
         });
-      sheet.getRange(found.rowIndex, hdr["Qty"] + 1).setValue(q);
+      updated[hdr["Qty"]] = q;
     }
-    sheet.getRange(found.rowIndex, hdr["UpdatedAt"] + 1).setValue(now);
+    
+    updated[hdr["Version"]] = currentVersion + 1;
+    updated[hdr["UpdatedAt"]] = now;
+    
+    sheet.getRange(found.rowIndex, 1, 1, updated.length).setValues([updated]);
 
-    writeActivityLog("updateLogEntry", payload, { logId: payload.logId });
-    return respond(true, { logId: payload.logId });
+    writeActivityLog("updateLogEntry", payload, { 
+      logId: payload.logId,
+      newVersion: currentVersion + 1 
+    });
+    return respond(true, { 
+      logId: payload.logId,
+      newVersion: currentVersion + 1 
+    });
   });
 }
 
@@ -495,55 +533,64 @@ function updateLogEntry(payload) {
  * Required: logs (array of objects)
  */
 function bulkUpsertLogs(payload) {
-    if (!payload || !Array.isArray(payload.logs)) {
-        return respond(false, null, { code: "VALIDATION_ERROR", message: "logs array required" });
+  return withLock(function () {
+    if (!payload.logs || !Array.isArray(payload.logs)) {
+      return respond(false, null, { code: "VALIDATION_ERROR", message: "logs must be an array" });
     }
 
-    // FIX (AI-1 High 7): Moved the getDataRange().getValues() read INSIDE the lock.
-    // Previously, it read the data before acquiring the lock, meaning concurrent writes 
-    // could result in this function overwriting newly added rows with stale data.
-    return withLock(() => {
-        const sheet = getSheet(SHEET_NAMES.DAILY_LOGS);
-        const hdr = buildHeaderMap(sheet);
-        
-        // Read happens here, safely inside the lock
-        const data = sheet.getDataRange().getValues();
-        const existingLogs = {};
-        for (let i = 1; i < data.length; i++) {
-            const logId = data[i][hdr["CustomerId"]] + "|" + data[i][hdr["Date"]];
-            existingLogs[logId] = i + 1; // 1-based row index
-        }
+    const sheet = getSheet(SHEET_NAMES.DAILY_LOGS);
+    const hdr = getHeaders(SHEET_NAMES.DAILY_LOGS);
+    const data = sheet.getDataRange().getValues();
+    
+    const existingLogs = {};
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const key = row[hdr["CustomerId"]] + "|" + row[hdr["Date"]] + "|" + (row[hdr["Product"]] || "Cow Milk");
+      existingLogs[key] = i;
+    }
+    
+    row[hdr["Version"]] = 1;
+    const rowsToUpdate = [];
+    const rowsToAppend = [];
 
-        const updates = [];
-        const inserts = [];
+    payload.logs.forEach(log => {
+      const product = log.milkType || log.product || "Cow Milk";
+      const key = log.customerId + "|" + log.date + "|" + product;
+      const qty = Number(log.qty) || 0;
+      const delivered = !!log.delivered;
+      
+      const row = new Array(sheet.getLastColumn()).fill("");
+      row[hdr["LogId"]] = log.id || log.logId || Utilities.getUuid(); // FIXED: was "Id"
+      row[hdr["CustomerId"]] = log.customerId;
+      row[hdr["Date"]] = log.date;
+      row[hdr["Product"]] = product; // FIXED: was "MilkType"
+      row[hdr["Qty"]] = qty;
+      row[hdr["Delivered"]] = delivered;
+      row[hdr["Note"]] = log.note || "";
+      row[hdr["UpdatedAt"]] = nowISTTimestamp();
 
-        payload.logs.forEach(log => {
-            const logId = log.customerId + "|" + log.date;
-            const row = new Array(sheet.getLastColumn()).fill("");
-            row[hdr["CustomerId"]] = log.customerId;
-            row[hdr["Date"]] = log.date;
-            row[hdr["MilkType"]] = log.milkType;
-            row[hdr["Qty"]] = log.qty;
-            row[hdr["Delivered"]] = !!log.delivered;
-            row[hdr["Id"]] = log.id || Utilities.getUuid();
-
-            if (existingLogs[logId]) {
-                updates.push({ rowIndex: existingLogs[logId], data: [row] });
-            } else {
-                inserts.push(row);
-            }
-        });
-
-        updates.forEach(u => {
-            sheet.getRange(u.rowIndex, 1, 1, u.data[0].length).setValues(u.data);
-        });
-
-        if (inserts.length > 0) {
-            sheet.getRange(sheet.getLastRow() + 1, 1, inserts.length, inserts[0].length).setValues(inserts);
-        }
-
-        return respond(true, { updated: updates.length, inserted: inserts.length });
+      if (existingLogs[key] !== undefined) {
+        const rowIndex = existingLogs[key];
+        row[hdr["CreatedAt"]] = data[rowIndex][hdr["CreatedAt"]] || nowISTTimestamp();
+        rowsToUpdate.push({ index: rowIndex, data: row });
+      } else {
+        row[hdr["CreatedAt"]] = nowISTTimestamp();
+        rowsToAppend.push(row);
+      }
     });
+
+    // Batch updates
+    rowsToUpdate.forEach(u => {
+      sheet.getRange(u.index + 1, 1, 1, row.length).setValues([u.data]);
+    });
+    
+    if (rowsToAppend.length > 0) {
+      sheet.getRange(sheet.getLastRow() + 1, 1, rowsToAppend.length, rowsToAppend[0].length).setValues(rowsToAppend);
+    }
+
+    writeActivityLog("bulkUpsertLogs", "Upserted " + payload.logs.length + " daily logs");
+    return respond(true, { updated: rowsToUpdate.length, created: rowsToAppend.length });
+  });
 }
 
 /**

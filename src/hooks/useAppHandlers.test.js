@@ -2,44 +2,70 @@ import { describe, it, expect, vi } from "vitest";
 import { useAppHandlers } from "./useAppHandlers";
 import { renderHook, act } from "@testing-library/react";
 
-// ✅ UPDATED: Dynamic mock for callApi and all required mappers
-vi.mock("../lib/api.js", () => {
-  const callApiMock = vi.fn((action) => {
-    // Handle the new "Refetch-from-Server" pattern
-    if (action === "getAdjustments")
-      return Promise.resolve({ adjustments: [] });
-    if (action === "getBills") return Promise.resolve({ bills: [] });
-    if (action === "getCustomers") return Promise.resolve({ customers: [] });
-    if (action === "getMilkImports") return Promise.resolve({ imports: [] });
-    if (action === "getDailyLogs") return Promise.resolve({ logs: [] });
-    if (action === "getBrands") return Promise.resolve({ brands: [] });
-    if (action === "getPauses") return Promise.resolve({ pauses: [] });
-    if (action === "getSubscriptions")
-      return Promise.resolve({ subscriptions: [] });
-
-    // Default response for create/update actions
-    return Promise.resolve({
-      success: true,
-      data: { customer: { id: "C123" }, amountPaid: 100, status: "Paid" },
-    });
-  });
-
-  return {
-    callApi: callApiMock,
-    // Mappers used by useAppHandlers.js (identity functions for testing)
-    mapCustomerToApi: (form) => form,
-    mapImportToApi: (form) => form,
-    mapPaymentToApi: (id, amt) => ({ billId: id, amountPaid: amt }),
-    mapBillFromApi: (b) => b,
-    mapCustomerFromApi: (c) => c,
-    mapImportFromApi: (i) => i,
-    mapLogFromApi: (l) => l,
-    mapAdjustmentFromApi: (a) => a,
-    mapPauseFromApi: (p) => p,
-    mapBrandFromApi: (b) => b,
-    mapSubscriptionFromApi: (s) => s,
-  };
-});
+vi.mock('../lib/api', () => ({
+  callApi: vi.fn(async (action, payload) => {
+    // Strict mock: only return success for explicitly handled actions
+    const knownActions = [
+      'addCustomer',
+      'updateCustomer',
+      'deactivateCustomer',
+      'getCustomers',
+      'addPausePeriod',
+      'updateLogEntry',
+      'bulkUpsertLogs',
+      'getDailyLogs',
+      'saveSubscription',
+      'getSubscriptions',
+      'addAdHocLog',
+      'generateDailyLogsForDate',
+      'generateMonthBill',
+      'getBills',
+      'recordPayment',
+      'addAdjustment',
+      'applyAdjustment',
+      'getAdjustments',
+      'lockBill',
+      'unlockBill',
+      'addCreditNote',
+      'getCreditNotes',
+      'addMilkImport',
+      'updateMilkImport',
+      'getMilkImports',
+      'getDailyInventory',
+      'getBrands',
+      'addMilkBrand',
+      'runDiagnostics',
+      'eraseAllData',
+      'verifyPIN',
+      'rotatePIN',
+    ];
+    
+    if (!knownActions.includes(action)) {
+      console.warn(`Mock callApi called with unknown action: ${action}`);
+      return { success: false, error: { code: 'UNKNOWN_ACTION', message: `Unknown action: ${action}` } };
+    }
+    
+    // Return appropriate mock data based on action
+    switch (action) {
+      case 'addCustomer':
+        return { success: true, data: { customerId: payload.idempotencyKey ? 'C-MOCK' : 'C-TEST123' } };
+      case 'updateCustomer':
+        return { success: true, data: { customerId: payload.customerId, newVersion: (payload.expectedVersion || 1) + 1 } };
+      case 'getCustomers':
+        return { success: true, data: { customers: [], total: 0, hasMore: false } };
+      case 'addAdjustment':
+        return { success: true, data: { adjustmentId: 'ADJ-MOCK123' } };
+      case 'recordPayment':
+        return { success: true, data: { paymentId: 'PAY-MOCK123' } };
+      case 'getBills':
+        return { success: true, data: { bills: [] } };
+      case 'getAdjustments':
+        return { success: true, data: { adjustments: [] } };
+      default:
+        return { success: true, data: {} };
+    }
+  }),
+}));
 
 function createMockHandlers(overrides = {}) {
   const defaults = {

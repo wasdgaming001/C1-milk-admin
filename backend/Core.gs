@@ -59,7 +59,7 @@ const SHEET_NAMES = {
   CREDIT_NOTES: "CreditNotes",
 };
 
-const TIMEZONE = "Asia/Kolkata";
+const TIMEZONE = TIMEZONE;
 
 function getSheet(constName) {
   const name = SHEET_NAMES[constName] || constName;
@@ -273,7 +273,7 @@ function writeActivityLog(action, payload, result) {
             const hdr = buildHeaderMap(sheet);
             const row = new Array(sheet.getLastColumn()).fill("");
             
-            row[hdr["Timestamp"]] = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd HH:mm:ss");
+            row[hdr["Timestamp"]] = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd HH:mm:ss");
             row[hdr["Action"]] = action;
             row[hdr["Payload"]] = JSON.stringify(payload || {}).slice(0, 50000);
             row[hdr["Result"]] = JSON.stringify(result || {}).slice(0, 50000);
@@ -364,7 +364,16 @@ function constantTimeEqual(a, b) {
 }
 
 function hashPIN(pin, salt) {
-  return sha256Hex(salt + pin);
+  // Use multiple iterations to slow down brute force
+  // Apps Script doesn't have native PBKDF2, so we simulate with repeated SHA-256
+  const iterations = 10000;
+  let hash = salt + pin; 
+  for (let i = 0; i < iterations; i++) {
+    hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, hash, Utilities.Charset.UTF_8)
+      .map(byte => ('0' + (byte & 0xFF).toString(16)).slice(-2))
+      .join('');
+  } 
+  return hash;
 }
 
 function checkAndIncrementPinRateLimit(ipHash) {
@@ -394,66 +403,55 @@ function checkAndIncrementPinRateLimit(ipHash) {
 }
 
 function verifyPIN(payload) {
-  payload = payload || {};
-  if (!payload.pin || !/^\d{4}$/.test(String(payload.pin))) {
-    return respond(false, null, {
-      code: "VALIDATION_ERROR",
-      message: "PIN must be exactly 4 digits",
-    });
-  }
+  const pin = payload.pin;
+  if (!pin) return respond(false, null, { code: "VALIDATION_ERROR", message: "PIN required" });
 
   return withLock(function () {
     const ipHash = payload.ipHash || "unknown";
-    const rateLimit = checkAndIncrementPinRateLimit(ipHash);
+    
+    // FIXED: Only CHECK the limit here, do not increment yet
+    const rateLimit = checkPinRateLimit(ipHash);
     if (!rateLimit.allowed) {
-      return respond(false, null, {
-        code: "RATE_LIMITED",
-        message: "Too many PIN attempts today. Try again tomorrow.",
-      });
+      return respond(false, null, { code: "RATE_LIMITED", message: "Too many failed PIN attempts today." });
     }
 
-    const salt = getSettingValue("PINSalt");
-    const storedHash = getSettingValue("PINHash");
-    if (!salt || !storedHash) {
-      return respond(false, null, {
-        code: "NOT_CONFIGURED",
-        message: "PIN is not yet configured. Run rotatePIN first.",
-      });
+    const props = PropertiesService.getScriptProperties();
+    const storedHash = props.getProperty("PIN_HASH");
+    const salt = props.getProperty("PIN_SALT");
+
+    if (!storedHash || !salt) {
+      return respond(false, null, { code: "SYSTEM_ERROR", message: "PIN not configured" });
     }
 
-    const candidateHash = hashPIN(String(payload.pin), salt);
+    const candidateHash = hashPIN(pin, salt);
     if (!constantTimeEqual(candidateHash, storedHash)) {
-      return respond(false, null, {
-        code: "INVALID_PIN",
-        message: "Incorrect PIN",
-        attemptsToday: rateLimit.attemptsToday,
-      });
+      // FIXED: ONLY increment the rate limit counter on FAILED attempts
+      incrementPinRateLimit(ipHash);
+      return respond(false, null, { code: "INVALID_PIN", message: "Incorrect PIN" });
     }
 
+    // Success path
     const token = Utilities.getUuid();
-    const appSecret =
-      PropertiesService.getScriptProperties().getProperty("APP_SECRET") || "";
-    const sessionSecret = appSecret ? sha256Hex(token + appSecret) : "";
-    const expiresAt = Date.now() + SESSION_TTL_MS;
-
-    const sysSheet = getSheet("SYSTEM_STATE");
-    const sysHdr = buildHeaderMap(sysSheet);
-    const sessionRow = [];
-    sessionRow[sysHdr["Key"]] = "Session_" + token;
-    sessionRow[sysHdr["Value"]] = JSON.stringify({
-      expiresAt: expiresAt,
-      ipHash: ipHash,
-    });
-    safeAppend(sysSheet, sessionRow);
-
-    writeActivityLog("verifyPIN", { ipHash: ipHash }, { success: true });
-
-    return respond(true, {
-      token: token,
-      sessionSecret: sessionSecret,
-      expiresAt: expiresAt,
-    });
+    props.setProperty("SESSION_" + token, JSON.stringify({ ip: ipHash, created: nowISTTimestamp() }));
+    writeActivityLog("verifyPIN", "Successful login from " + ipHash);
+    
+    return respond(true, { token: token });
   });
+}
+
+// --- ADD/REPLACE these helpers ---
+function checkPinRateLimit(ipHash) {
+  const props = PropertiesService.getScriptProperties();
+  const key = "PIN_RATE_" + ipHash + "_" + todayIST();
+  const attempts = Number(props.getProperty(key) || 0);
+  return { allowed: attempts < MAX_PIN_ATTEMPTS_PER_DAY_PER_IP, attempts };
+}
+
+function incrementPinRateLimit(ipHash) {
+  const props = PropertiesService.getScriptProperties();
+  const key = "PIN_RATE_" + ipHash + "_" + todayIST();
+  const attempts = Number(props.getProperty(key) || 0);
+  props.setProperty(key, attempts + 1);
 }
 
 function rotatePIN(payload) {
