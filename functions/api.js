@@ -1,9 +1,9 @@
+
 // functions/api.js
 // Cloudflare Pages Serverless Function that proxies requests to Google Apps Script
 
-function buildCorsHeaders(request) {
-    const origin = request.headers.get("Origin") || "";
-    const allowedOrigin = env.ALLOWED_ORIGIN || "*";
+// ✅ FIXED: Changed parameters to match how the function is actually called
+function buildCorsHeaders(origin, allowedOrigin) {
     // Do NOT echo the request origin, as that creates a security vulnerability.
     const corsOrigin = allowedOrigin === "*" ? "*" : allowedOrigin.replace(/\/$/, "");
     return {
@@ -58,9 +58,9 @@ const checkEnvironment = (env, corsHeaders) => {
   return null;
 };
 
-function checkOrigin(request) {
+// ✅ FIXED: Pass allowedOrigin as an argument instead of relying on a global 'env'
+function checkOrigin(request, allowedOrigin) {
     const origin = request.headers.get("Origin") || "";
-    const allowedOrigin = env.ALLOWED_ORIGIN || "*";
     // If allowedOrigin is "*", we accept any origin.
     if (allowedOrigin === "*") return true;
 
@@ -101,7 +101,8 @@ async function validateRequest(request, env, corsHeaders) {
   const envCheck = checkEnvironment(env, corsHeaders);
   if (envCheck) return envCheck;
 
-  const originCheck = checkOrigin(request);
+  // ✅ FIXED: Pass allowedOrigin to checkOrigin
+  const originCheck = checkOrigin(request, allowedOrigin);
   if (!originCheck) {
     return errorResponse(403, corsHeaders, "FORBIDDEN", "Origin not allowed");
   }

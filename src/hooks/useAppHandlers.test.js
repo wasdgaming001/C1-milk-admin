@@ -2,42 +2,19 @@ import { describe, it, expect, vi } from "vitest";
 import { useAppHandlers } from "./useAppHandlers";
 import { renderHook, act } from "@testing-library/react";
 
+// ✅ FIXED: Added the missing mapping functions to the mock!
 vi.mock('../lib/api', () => ({
   callApi: vi.fn(async (action, payload) => {
     // Strict mock: only return success for explicitly handled actions
     const knownActions = [
-      'addCustomer',
-      'updateCustomer',
-      'deactivateCustomer',
-      'getCustomers',
-      'addPausePeriod',
-      'updateLogEntry',
-      'bulkUpsertLogs',
-      'getDailyLogs',
-      'saveSubscription',
-      'getSubscriptions',
-      'addAdHocLog',
-      'generateDailyLogsForDate',
-      'generateMonthBill',
-      'getBills',
-      'recordPayment',
-      'addAdjustment',
-      'applyAdjustment',
-      'getAdjustments',
-      'lockBill',
-      'unlockBill',
-      'addCreditNote',
-      'getCreditNotes',
-      'addMilkImport',
-      'updateMilkImport',
-      'getMilkImports',
-      'getDailyInventory',
-      'getBrands',
-      'addMilkBrand',
-      'runDiagnostics',
-      'eraseAllData',
-      'verifyPIN',
-      'rotatePIN',
+      'addCustomer', 'updateCustomer', 'deactivateCustomer', 'getCustomers',
+      'addPausePeriod', 'updateLogEntry', 'bulkUpsertLogs', 'getDailyLogs',
+      'saveSubscription', 'getSubscriptions', 'addAdHocLog', 'generateDailyLogsForDate',
+      'generateMonthBill', 'getBills', 'recordPayment', 'addAdjustment',
+      'applyAdjustment', 'getAdjustments', 'lockBill', 'unlockBill',
+      'addCreditNote', 'getCreditNotes', 'addMilkImport', 'updateMilkImport',
+      'getMilkImports', 'getDailyInventory', 'getBrands', 'addMilkBrand',
+      'runDiagnostics', 'eraseAllData', 'verifyPIN', 'rotatePIN',
     ];
     
     if (!knownActions.includes(action)) {
@@ -45,7 +22,6 @@ vi.mock('../lib/api', () => ({
       return { success: false, error: { code: 'UNKNOWN_ACTION', message: `Unknown action: ${action}` } };
     }
     
-    // Return appropriate mock data based on action
     switch (action) {
       case 'addCustomer':
         return { success: true, data: { customerId: payload.idempotencyKey ? 'C-MOCK' : 'C-TEST123' } };
@@ -65,6 +41,17 @@ vi.mock('../lib/api', () => ({
         return { success: true, data: {} };
     }
   }),
+  
+  // ✅ ADDED: Mock the mapping functions so they don't throw "undefined is not a function"
+  mapPaymentToApi: vi.fn((billId, amount, meta = {}) => ({
+    billId,
+    amount: Number(amount),
+    mode: meta.mode,
+    date: meta.date,
+    note: meta.note,
+  })),
+  mapBillFromApi: vi.fn((bill) => bill),
+  mapAdjustmentFromApi: vi.fn((adj) => adj),
 }));
 
 function createMockHandlers(overrides = {}) {
@@ -91,7 +78,6 @@ function createMockHandlers(overrides = {}) {
     refresh: vi.fn(),
   };
 
-  // ✅ FIXED: Use renderHook to properly test React hooks without breaking rules
   const { result } = renderHook(() =>
     useAppHandlers({ ...defaults, ...overrides }),
   );
@@ -113,7 +99,6 @@ describe("useAppHandlers - recordPayment", () => {
       closeModal,
     });
 
-    // ✅ Wrap async state updates in act() to prevent React warnings
     await act(async () => {
       await handlers.recordPayment();
     });
