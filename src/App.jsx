@@ -29,7 +29,7 @@ export default function App() {
         loadErrors={state.loadErrors}
         onRefresh={state.refresh}
       >
-        <AppPage ctx={ctx} />
+        <AppPage tab={state.tab} state={state} handlers={handlers} />
         <AppModals ctx={ctx} />
       </AppShell>
       {state.toast && <Toast msg={state.toast.msg} type={state.toast.type} onClose={() => state.setToast(null)} />}
