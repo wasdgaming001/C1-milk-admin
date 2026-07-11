@@ -59,7 +59,7 @@ const SHEET_NAMES = {
   CREDIT_NOTES: "CreditNotes",
 };
 
-const TIMEZONE = TIMEZONE;
+const TIMEZONE = Session.getScriptTimeZone() || "Asia/Kolkata";
 
 function getSheet(constName) {
   const name = SHEET_NAMES[constName] || constName;
@@ -414,14 +414,19 @@ function verifyPIN(payload) {
     if (!rateLimit.allowed) {
       return respond(false, null, { code: "RATE_LIMITED", message: "Too many failed PIN attempts today." });
     }
-
-    const props = PropertiesService.getScriptProperties();
-    const storedHash = props.getProperty("PIN_HASH");
-    const salt = props.getProperty("PIN_SALT");
-
-    if (!storedHash || !salt) {
-      return respond(false, null, { code: "SYSTEM_ERROR", message: "PIN not configured" });
+    //  FIX START: Read the PIN from the Script Properties
+    const sheet = getSheet("SETTINGS");
+    const hdr = buildHeaderMap(sheet);
+    
+    const saltRow = findRowByColumnValue(sheet, hdr, "Key", "PINSalt");
+    const hashRow = findRowByColumnValue(sheet, hdr, "Key", "PINHash");
+    
+    if (!saltRow || !hashRow) {
+      return respond(false, null, { code: "SYSTEM_ERROR", message: "PIN not configured in SETTINGS sheet" });
     }
+    
+    const salt = sheet.getRange(saltRow.rowIndex, hdr["Value"] + 1).getValue();
+    const storedHash = sheet.getRange(hashRow.rowIndex, hdr["Value"] + 1).getValue();
 
     const candidateHash = hashPIN(pin, salt);
     if (!constantTimeEqual(candidateHash, storedHash)) {
@@ -432,10 +437,15 @@ function verifyPIN(payload) {
 
     // Success path
     const token = Utilities.getUuid();
+    
+    // We still use Script Properties for temporary sessions, which is perfectly fine!
+    const props = PropertiesService.getScriptProperties();
     props.setProperty("SESSION_" + token, JSON.stringify({ ip: ipHash, created: nowISTTimestamp() }));
+    
     writeActivityLog("verifyPIN", "Successful login from " + ipHash);
     
-    return respond(true, { token: token });
+    // Return both token and sessionSecret so the frontend state updates correctly
+    return respond(true, { token: token, sessionSecret: token }); 
   });
 }
 
@@ -675,6 +685,7 @@ const ALLOWED_ACTIONS = new Set([
   "reconcileMilkInventory",
   "addMilkBrand",
   "getMilkBrands", 
+  "getBrands",
   "getMilkTypes",
   // Auth
   "verifyPIN",
