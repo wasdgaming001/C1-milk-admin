@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import {
   Home,
   Users,
@@ -7,6 +8,8 @@ import {
   MoreHorizontal,
   LogOut,
   Wifi,
+  Moon, 
+  Sun,
 } from "lucide-react";
 
 const TABS = [
@@ -51,6 +54,19 @@ export function AppShell({
   children,
   footer,
 }) {
+    const [darkMode, setDarkMode] = useState(() => 
+    localStorage.getItem('darkMode') === 'true'
+  );
+
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('darkMode', darkMode);
+  }, [darkMode]);
+
   return (
     <div
       style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}
@@ -91,6 +107,21 @@ export function AppShell({
           <h2>{TAB_TITLES[tab]}</h2>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                    <button
+            onClick={() => setDarkMode(!darkMode)}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              padding: 4,
+              display: "flex",
+              alignItems: "center"
+            }}
+            title="Toggle Dark Mode"
+          >
+            {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
           <div
             style={{
               display: "flex",

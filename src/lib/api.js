@@ -3,32 +3,40 @@
 // --- RESPONSE MAPPERS (Backend -> Frontend) ---
 
 export function mapCustomerFromApi(c) {
- return {
-   id: c.customerId,
-   name: c.name,
-   address: c.deliveryAddress,
-   phone: c.phone,
-   status: c.status,
-   product: c.product,
-   qty: c.dailyQty,
-   deliveryDays: c.deliveryDays,
-   balance: c.balance,
-   version: c.version,
- };
+  let days = [];
+  try {
+    const d = c.deliveryDays;
+    if (Array.isArray(d)) days = d;
+    else if (typeof d === 'string' && d.trim()) days = JSON.parse(d);
+  } catch (e) { days = []; }
+
+  return {
+    id: c.customerId,
+    name: c.name,
+    address: c.deliveryAddress,
+    phone: c.phone,
+    status: c.status,
+    product: c.product,
+    qty: Number(c.dailyQty || 0),       
+    deliveryDays: days,                 
+    balance: Number(c.balance || 0),     
+    version: c.version,
+  };
 }
 
+
 export function mapBillFromApi(b) {
- return {
-   id: b.billId,
-   custId: b.customerId,
-   month: b.month,
-   amount: b.amount,
-   paid: b.amountPaid,
-   due: b.dueDate,
-   status: b.status,
-   version: b.version,
-   locked: !!b.locked,
- };
+  return {
+    id: b.billId,
+    custId: b.customerId,
+    month: b.month,
+    amount: Number(b.amount || 0),       
+    paid: Number(b.amountPaid || 0),    
+    due: b.dueDate,
+    status: b.status,
+    version: b.version,
+    locked: !!b.locked,
+  };
 }
 
 export function mapImportFromApi(i) {
@@ -85,15 +93,15 @@ export function mapPauseFromApi(p) {
 }
 
 export function mapBrandFromApi(b) {
- return {
-   id: b.brandId,
-   name: b.brandName,
-   status: b.status,
-   supplier: b.supplierName,
-   phone: b.supplierPhone,
-   defaultMilkType: b.defaultMilkType,
-   rate: b.ratePerLiter,
- };
+  return {
+    id: b.brandId,
+    name: b.brandName,
+    status: b.status,
+    supplier: b.supplierName,
+    phone: b.supplierPhone,
+    defaultMilkType: b.defaultMilkType,
+    rate: Number(b.ratePerLiter || 0),  
+  };
 }
 
 export function mapSubscriptionFromApi(s) {
