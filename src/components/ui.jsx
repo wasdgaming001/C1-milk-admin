@@ -86,20 +86,15 @@ export function Btn({
   );
 }
 
-export function Field({ label, children, error }) {
+export function Field({ label, children, className, error }) {
   return (
-    <div className="field">
+    <div className={`field ${className || ""}`}>
       {label && <label className="field-label">{label}</label>}
       {children}
-      {error && (
-        <span style={{ color: "#dc2626", fontSize: 12, marginTop: -4 }}>
-          {error}
-        </span>
-      )}
+      {error && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 4 }}>{error}</div>}
     </div>
   );
 }
-
 export function Card({ children, style }) {
   return (
     <div className="card" style={style}>

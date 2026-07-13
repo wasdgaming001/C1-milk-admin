@@ -1,7 +1,7 @@
 export function validateImportForm(form) {
   if (!form.date || !form.brand || !form.type) return "Fill required fields";
   const qty = parseFloat(form.qty) || 0;
-  if (qty <= 0 || qty > 9999) return "Invalid quantity";
+  if (qty <= 0 || qty > 5000) return "Invalid quantity";
   if ((parseFloat(form.rate) || 0) <= 0) return "Invalid rate";
   return null;
 }

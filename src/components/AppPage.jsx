@@ -4,6 +4,7 @@ import Delivery from "../pages/Delivery.jsx";
 import Imports from "../pages/Imports.jsx";
 import Billing from "../pages/Billing.jsx";
 import More from "../pages/More.jsx";
+import { callApi } from "../lib/api.js"; 
 
 function renderDashboard(state, handlers) {
   return (
@@ -58,7 +59,7 @@ function renderDelivery(state, handlers) {
 function renderImports(state, handlers) {
   return (
     <Imports
-      filtered={state.filteredImports || []} // 🔥 Updated to filteredImports
+      filtered={state.filteredImports || []} 
       brands={state.brands || []}
       impFilter={state.impFilter || {}}
       onImpFilterChange={state.setImpFilter}
@@ -105,11 +106,25 @@ function renderMore(state, handlers) {
       activeBrandsCount={state.activeBrandsCount || 0}
       onOpenModal={state.openModal}
       onApplyAdj={(adjId, billId) => handlers.applyAdjustment(adjId, billId)}
-      onRunDiag={() => {
-        state.setDiagRan(true);
-        state.toast$("19 checks complete", "info");
+
+      onRunDiag={async () => {
+        try {
+          await callApi("runDiagnostics");
+          state.setDiagRan(true);
+          state.toast$("Diagnostics executed successfully", "success");
+        } catch (e) {
+          state.toast$("Diagnostics failed", "error");
+        }
       }}
-      onHealthCheck={() => state.toast$("Health check passed — V17", "success")}
+
+      onHealthCheck={async () => {
+        try {
+          await callApi("healthCheck");
+          state.toast$("Health check passed — V17", "success");
+        } catch (e) {
+          state.toast$("Health check failed", "error");
+        }
+      }}
     />
   );
 }
