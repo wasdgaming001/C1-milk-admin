@@ -502,7 +502,7 @@ function getMilkImportSummary(payload) {
 function getDailyInventory(payload) {
   const targetDate = payload.date || todayIST();
   const sheet = getSheet(SHEET_NAMES.MILK_IMPORTS);
-  const hdr = getHeaders(SHEET_NAMES.MILK_IMPORTS);
+  const hdr = buildHeaderMap(getSheet(SHEET_NAMES.MILK_IMPORTS));
   const data = sheet.getDataRange().getValues();
   
   let totalQty = 0;

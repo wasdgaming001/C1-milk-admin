@@ -280,7 +280,7 @@ function addCreditNote(payload) {
 
     // Verify customer exists
     const custSheet = getSheet(SHEET_NAMES.CUSTOMERS);
-    const custHdr = getHeaders(SHEET_NAMES.CUSTOMERS);
+    const custHdr = buildHeaderMap(getSheet(SHEET_NAMES.CUSTOMERS));  
     const custData = custSheet.getDataRange().getValues();
     let customerExists = false;
     for (let i = 1; i < custData.length; i++) {
@@ -294,11 +294,11 @@ function addCreditNote(payload) {
     }
 
     const sheet = getSheet(SHEET_NAMES.CREDIT_NOTES);
-    const hdr = getHeaders(SHEET_NAMES.CREDIT_NOTES);
+    const hdr = buildHeaderMap(getSheet(SHEET_NAMES.CREDIT_NOTES));
     const noteId = "CN-" + Utilities.getUuid();
     
     const row = new Array(sheet.getLastColumn()).fill("");
-    row[hdr["CreditNoteId"]] = noteId;
+    row[hdr["Id"]] = noteId;
     row[hdr["CustomerId"]] = payload.customerId;
     row[hdr["Date"]] = payload.date || todayIST();
     row[hdr["Amount"]] = amount;

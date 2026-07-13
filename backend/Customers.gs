@@ -308,7 +308,7 @@ function deactivateCustomer(payload) {
     }
 
     const sheet = getSheet(SHEET_NAMES.CUSTOMERS);
-    const hdr = getHeaders(SHEET_NAMES.CUSTOMERS);
+    const hdr = buildHeaderMap(getSheet(SHEET_NAMES.CUSTOMERS));
     const data = sheet.getDataRange().getValues();
 
     for (let i = 1; i < data.length; i++) {
@@ -539,7 +539,7 @@ function bulkUpsertLogs(payload) {
     }
 
     const sheet = getSheet(SHEET_NAMES.DAILY_LOGS);
-    const hdr = getHeaders(SHEET_NAMES.DAILY_LOGS);
+    const hdr = buildHeaderMap(sheet);
     const data = sheet.getDataRange().getValues();
     
     const existingLogs = {};
@@ -549,7 +549,6 @@ function bulkUpsertLogs(payload) {
       existingLogs[key] = i;
     }
     
-    row[hdr["Version"]] = 1;
     const rowsToUpdate = [];
     const rowsToAppend = [];
 
@@ -560,10 +559,10 @@ function bulkUpsertLogs(payload) {
       const delivered = !!log.delivered;
       
       const row = new Array(sheet.getLastColumn()).fill("");
-      row[hdr["LogId"]] = log.id || log.logId || Utilities.getUuid(); // FIXED: was "Id"
+      row[hdr["LogId"]] = log.id || log.logId || Utilities.getUuid(); 
       row[hdr["CustomerId"]] = log.customerId;
       row[hdr["Date"]] = log.date;
-      row[hdr["Product"]] = product; // FIXED: was "MilkType"
+      row[hdr["Product"]] = product; 
       row[hdr["Qty"]] = qty;
       row[hdr["Delivered"]] = delivered;
       row[hdr["Note"]] = log.note || "";
@@ -572,16 +571,27 @@ function bulkUpsertLogs(payload) {
       if (existingLogs[key] !== undefined) {
         const rowIndex = existingLogs[key];
         row[hdr["CreatedAt"]] = data[rowIndex][hdr["CreatedAt"]] || nowISTTimestamp();
+
+        if (hdr["Version"] !== undefined) {
+          const oldVersion = Number(data[rowIndex][hdr["Version"]] || 0);
+          row[hdr["Version"]] = oldVersion + 1;
+        }
+        
         rowsToUpdate.push({ index: rowIndex, data: row });
       } else {
         row[hdr["CreatedAt"]] = nowISTTimestamp();
+
+        if (hdr["Version"] !== undefined) {
+          row[hdr["Version"]] = 1;
+        }
+        
         rowsToAppend.push(row);
       }
     });
 
     // Batch updates
     rowsToUpdate.forEach(u => {
-      sheet.getRange(u.index + 1, 1, 1, row.length).setValues([u.data]);
+      sheet.getRange(u.index + 1, 1, 1, u.data.length).setValues([u.data]);
     });
     
     if (rowsToAppend.length > 0) {

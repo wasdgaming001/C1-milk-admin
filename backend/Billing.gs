@@ -597,7 +597,7 @@ function addAdjustment(payload) {
     }
 
     const sheet = getSheet(SHEET_NAMES.ADJUSTMENTS);
-    const hdr = getHeaders(SHEET_NAMES.ADJUSTMENTS);
+    const hdr = buildHeaderMap(getSheet(SHEET_NAMES.ADJUSTMENTS));
     const adjId = "ADJ-" + Utilities.getUuid();
     
     const row = new Array(sheet.getLastColumn()).fill("");
@@ -771,7 +771,7 @@ function getBillText(payload) {
   }
 
   const sheet = getSheet(SHEET_NAMES.BILLS);
-  const hdr = getHeaders(SHEET_NAMES.BILLS);
+  const hdr = buildHeaderMap(getSheet(SHEET_NAMES.BILLS));
   const data = sheet.getDataRange().getValues();
 
   let bill = null;
@@ -788,7 +788,7 @@ function getBillText(payload) {
 
   // Get customer name
   const custSheet = getSheet(SHEET_NAMES.CUSTOMERS);
-  const custHdr = getHeaders(SHEET_NAMES.CUSTOMERS);
+  const custHdr = buildHeaderMap(getSheet(SHEET_NAMES.CUSTOMERS));  
   const custData = custSheet.getDataRange().getValues();
   let customerName = "Customer";
   for (let i = 1; i < custData.length; i++) {
@@ -855,11 +855,11 @@ function getAdjustments(payload) {
 function reconcileBillingLedger(payload) {
   return withLock(function () {
     const billsSheet = getSheet(SHEET_NAMES.BILLS);
-    const billsHdr = getHeaders(SHEET_NAMES.BILLS);
+    const billsHdr = buildHeaderMap(getSheet(SHEET_NAMES.BILLS));    
     const billsData = billsSheet.getDataRange().getValues();
 
     const paysSheet = getSheet(SHEET_NAMES.PAYMENTS);
-    const paysHdr = getHeaders(SHEET_NAMES.PAYMENTS);
+    const paysHdr = buildHeaderMap(getSheet(SHEET_NAMES.PAYMENTS));    
     const paysData = paysSheet.getDataRange().getValues();
 
     let reconciledCount = 0;
